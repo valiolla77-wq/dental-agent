@@ -37,3 +37,6 @@ dist/
 # Operating system files
 .DS_Store
 Thumbs.db
+
+# Project run outputs
+output/

@@ -45,6 +45,7 @@ class AgentState(TypedDict, total=False):
     last_tool_error: AgentToolError | None
     confirmation_required: bool
     confirmation_status: Literal["not_required", "pending", "approved", "rejected"]
+    confirmation_token: str | None
     confirmation_prompt: str | None
     final_response: str | None
     route: Literal["continue", "execute_tool", "confirmation", "finish"]
@@ -84,6 +85,7 @@ def create_initial_state(
         last_tool_error=None,
         confirmation_required=False,
         confirmation_status="not_required",
+        confirmation_token=None,
         confirmation_prompt=None,
         final_response=None,
         route="finish",

@@ -17,6 +17,7 @@ from langgraph.runtime import Runtime
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.confirmations import ConfirmationDecision, confirmation_store
 from app.agent.llm import ToolCallingChatModel, create_chat_model
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.registry import TOOL_REGISTRY, ToolDefinition, get_llm_tool_schemas
@@ -29,10 +30,13 @@ logger = logging.getLogger("dental_agent.agent")
 
 
 class AgentContext(TypedDict, total=False):
-    """Runtime dependencies supplied by the host; the graph owns neither."""
+    """Trusted per-invoke inputs from the host: dependencies, session identity,
+    and the confirmation decision. Nothing here round-trips through AgentState."""
 
     db: AsyncSession
     llm: ToolCallingChatModel
+    session_id: str | None
+    confirmation: ConfirmationDecision
 
 
 def _append_message(
@@ -97,8 +101,8 @@ def _safe_tool_call_for_history(
 
 
 def _confirmation_prompt(action: PendingAction) -> str:
-    name = action["tool_name"]
-    args = action["arguments"]
+    name = action.get("tool_name")
+    args = action.get("arguments") or {}
     labels = {
         "book_appointment": "ثبت نوبت",
         "cancel_appointment": "لغو نوبت",
@@ -162,6 +166,7 @@ def _finish_rejected_confirmation(state: AgentState) -> dict[str, Any]:
     messages.append({"role": "assistant", "content": response})
     return {
         "confirmation_required": False,
+        "confirmation_token": None,
         "pending_action": None,
         "pending_tool_calls": [],
         "selected_tool": None,
@@ -178,32 +183,56 @@ async def _agent_decision_node(
     runtime: Runtime[AgentContext],
 ) -> dict[str, Any]:
     pending_action = state.get("pending_action")
-    confirmation_status = state.get("confirmation_status", "not_required")
 
     if pending_action is not None:
-        if confirmation_status == "rejected":
+        if not isinstance(pending_action, dict):
             return _finish_rejected_confirmation(state)
-        if confirmation_status != "approved":
+        # Untrusted state claims (e.g. confirmation_status="approved") never
+        # authorize execution. Approval must arrive via the host-owned
+        # AgentContext and match the server-side record issued for this exact
+        # session, tool, and displayed arguments; records are single-use.
+        decision = runtime.context.get("confirmation")
+        session_id = runtime.context.get("session_id")
+        legacy_rejected = state.get("confirmation_status", "not_required") == "rejected"
+        context_rejected = (
+            isinstance(decision, dict) and decision.get("decision") == "rejected"
+        )
+
+        if legacy_rejected or context_rejected:
+            token = state.get("confirmation_token")
+            if isinstance(decision, dict) and decision.get("token"):
+                token = decision.get("token")
+            confirmation_store.consume(token, session_id=session_id)
+            return _finish_rejected_confirmation(state)
+
+        if not (isinstance(decision, dict) and decision.get("decision") == "approved"):
             return {
                 "confirmation_required": True,
                 "confirmation_status": "pending",
                 "route": "confirmation",
             }
 
+        record = confirmation_store.consume(decision.get("token"), session_id=session_id)
+        if (
+            record is None
+            or record.tool_name != pending_action.get("tool_name")
+            or record.arguments != pending_action.get("arguments")
+            or record.tool_call_id != pending_action.get("tool_call_id")
+        ):
+            # Unknown or consumed token, another session, or the pending action
+            # no longer matches what was displayed for confirmation.
+            return _finish_rejected_confirmation(state)
+
         pending_calls = list(state.get("pending_tool_calls", []))
-        call = pending_calls[0] if pending_calls else {
-            "tool_name": pending_action["tool_name"],
-            "arguments": pending_action["arguments"],
-            "tool_call_id": pending_action["tool_call_id"],
-        }
         if pending_calls:
             pending_calls.pop(0)
         return {
             "pending_tool_calls": pending_calls,
             "pending_action": None,
-            "selected_tool": call["tool_name"],
-            "selected_tool_arguments": call["arguments"],
-            "selected_tool_call_id": call["tool_call_id"],
+            "confirmation_token": None,
+            "selected_tool": record.tool_name,
+            "selected_tool_arguments": dict(record.arguments),
+            "selected_tool_call_id": record.tool_call_id,
             "confirmation_required": True,
             "route": "execute_tool",
             "final_response": None,
@@ -254,6 +283,7 @@ async def _agent_decision_node(
                 "last_tool_result": result,
                 "last_tool_error": error,
                 "messages": messages,
+                "route": "continue",
             }
         try:
             validated_arguments = definition.input_schema.model_validate(
@@ -275,6 +305,7 @@ async def _agent_decision_node(
                 "last_tool_result": result,
                 "last_tool_error": error,
                 "messages": messages,
+                "route": "continue",
             }
         call = {
             **call,
@@ -366,12 +397,31 @@ async def _agent_decision_node(
     }
 
 
-def _confirmation_node(state: AgentState) -> dict[str, Any]:
+def _confirmation_node(
+    state: AgentState,
+    runtime: Runtime[AgentContext],
+) -> dict[str, Any]:
     action = state.get("pending_action")
-    prompt = _confirmation_prompt(action) if action else "برای این عملیات تأیید شما لازم است."
+    confirmation_token = None
+    if isinstance(action, dict):
+        definition = TOOL_REGISTRY.get(action.get("tool_name") or "")
+        if definition is not None and definition.operation == "write":
+            record = confirmation_store.issue(
+                session_id=runtime.context.get("session_id"),
+                tool_name=action.get("tool_name") or "",
+                arguments=action.get("arguments") or {},
+                tool_call_id=action.get("tool_call_id") or str(uuid4()),
+            )
+            confirmation_token = record.token
+    prompt = (
+        _confirmation_prompt(action)
+        if isinstance(action, dict)
+        else "برای این عملیات تأیید شما لازم است."
+    )
     return {
         "confirmation_required": True,
         "confirmation_status": "pending",
+        "confirmation_token": confirmation_token,
         "confirmation_prompt": prompt,
         "final_response": prompt,
         "messages": _append_message(state, "assistant", prompt),

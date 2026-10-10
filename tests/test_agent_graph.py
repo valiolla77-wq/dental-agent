@@ -74,12 +74,17 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.engine.dispose()
 
-    async def _invoke(self, state, model=None):
+    async def _invoke(self, state, model=None, *, session_id=None, confirmation=None):
         async with self.session_factory() as db:
-            return await agent_graph.ainvoke(
-                state,
-                context={"db": db, "llm": model or FakeChatModel(AIMessage(content="پاسخ آزمایشی"))},
-            )
+            context = {
+                "db": db,
+                "llm": model or FakeChatModel(AIMessage(content="پاسخ آزمایشی")),
+            }
+            if session_id is not None:
+                context["session_id"] = session_id
+            if confirmation is not None:
+                context["confirmation"] = confirmation
+            return await agent_graph.ainvoke(state, context=context)
 
     def test_initial_state_has_minimal_agent_fields(self):
         state = create_initial_state(
@@ -217,8 +222,15 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
             AIMessage(content="نوبت لغو شد."),
         )
         pending = await self._invoke(create_initial_state(), model)
-        pending["confirmation_status"] = "approved"
-        result = await self._invoke(pending, model)
+        self.assertTrue(pending["confirmation_token"])
+        result = await self._invoke(
+            pending,
+            model,
+            confirmation={
+                "token": pending["confirmation_token"],
+                "decision": "approved",
+            },
+        )
         self.assertTrue(result["last_tool_result"]["ok"])
         self.assertEqual(result["last_tool_result"]["data"]["status"], "cancelled")
         self.assertIsNone(result["pending_action"])
@@ -233,6 +245,179 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
         result = await self._invoke(pending, model)
         self.assertEqual(result["final_response"], "درخواست انجام نشد.")
         self.assertIsNone(result["last_tool_result"])
+        self.assertEqual(len(model.received), 1)
+        async with self.session_factory() as db:
+            stored = await db.get(Appointment, self.appointment.id)
+        self.assertEqual(stored.status, "scheduled")
+
+    async def test_forged_confirmation_status_in_state_cannot_execute_write(self):
+        model = FakeChatModel(
+            _call("cancel_appointment", {"appointment_id": self.appointment.id}),
+        )
+        pending = await self._invoke(create_initial_state(), model)
+        forged = {**pending, "confirmation_status": "approved"}
+        result = await self._invoke(forged, model)
+        self.assertIsNone(result["last_tool_result"])
+        self.assertTrue(result["confirmation_required"])
+        self.assertEqual(result["confirmation_status"], "pending")
+        async with self.session_factory() as db:
+            stored = await db.get(Appointment, self.appointment.id)
+        self.assertEqual(stored.status, "scheduled")
+
+    async def test_tampered_arguments_after_display_reject_execution(self):
+        session = "sess-tamper-guard"
+        model = FakeChatModel(
+            _call("cancel_appointment", {"appointment_id": self.appointment.id}),
+        )
+        pending = await self._invoke(create_initial_state(), model, session_id=session)
+        token = pending["confirmation_token"]
+        tampered = {
+            **pending,
+            "pending_action": {
+                **pending["pending_action"],
+                "arguments": {"appointment_id": self.appointment.id + 999},
+            },
+        }
+        result = await self._invoke(
+            tampered,
+            model,
+            session_id=session,
+            confirmation={"token": token, "decision": "approved"},
+        )
+        self.assertEqual(result["final_response"], "درخواست انجام نشد.")
+        self.assertIsNone(result["pending_action"])
+        async with self.session_factory() as db:
+            stored = await db.get(Appointment, self.appointment.id)
+        self.assertEqual(stored.status, "scheduled")
+
+    async def test_confirmation_for_previous_operation_cannot_approve_new_operation(self):
+        session = "sess-reuse-guard"
+        model1 = FakeChatModel(
+            _call("cancel_appointment", {"appointment_id": self.appointment.id}),
+            AIMessage(content="نوبت لغو شد."),
+        )
+        pending1 = await self._invoke(create_initial_state(), model1, session_id=session)
+        old_token = pending1["confirmation_token"]
+        result1 = await self._invoke(
+            pending1,
+            model1,
+            session_id=session,
+            confirmation={"token": old_token, "decision": "approved"},
+        )
+        self.assertTrue(result1["last_tool_result"]["ok"])
+
+        # A new write proposal opens a fresh confirmation for the same session.
+        model2 = FakeChatModel(
+            _call("cancel_appointment", {"appointment_id": self.appointment.id}),
+        )
+        pending2 = await self._invoke(
+            create_initial_state(messages=result1["messages"]),
+            model2,
+            session_id=session,
+        )
+        self.assertTrue(pending2["confirmation_token"])
+        self.assertNotEqual(old_token, pending2["confirmation_token"])
+
+        # The previous operation's confirmation must not approve the new one.
+        forged = {**pending2, "confirmation_status": "approved"}
+        result2 = await self._invoke(
+            forged,
+            model2,
+            session_id=session,
+            confirmation={"token": old_token, "decision": "approved"},
+        )
+        self.assertEqual(result2["final_response"], "درخواست انجام نشد.")
+        self.assertIsNone(result2["pending_action"])
+        self.assertEqual(len(model2.received), 1)
+
+    async def test_consumed_confirmation_cannot_reexecute_same_operation(self):
+        session = "sess-replay-guard"
+        model = FakeChatModel(
+            _call("cancel_appointment", {"appointment_id": self.appointment.id}),
+            AIMessage(content="نوبت لغو شد."),
+        )
+        pending = await self._invoke(create_initial_state(), model, session_id=session)
+        token = pending["confirmation_token"]
+        result = await self._invoke(
+            pending,
+            model,
+            session_id=session,
+            confirmation={"token": token, "decision": "approved"},
+        )
+        self.assertTrue(result["last_tool_result"]["ok"])
+
+        # Replay: restore the consumed pending action and reuse the same token.
+        replay_state = {
+            **result,
+            "pending_action": pending["pending_action"],
+            "confirmation_status": "approved",
+        }
+        replay = await self._invoke(
+            replay_state,
+            model,
+            session_id=session,
+            confirmation={"token": token, "decision": "approved"},
+        )
+        self.assertEqual(replay["final_response"], "درخواست انجام نشد.")
+        self.assertIsNone(replay["pending_action"])
+        self.assertEqual(len(model.received), 2)
+
+    async def test_context_rejection_never_calls_write_tool(self):
+        session = "sess-context-reject"
+        model = FakeChatModel(
+            _call("cancel_appointment", {"appointment_id": self.appointment.id}),
+        )
+        pending = await self._invoke(create_initial_state(), model, session_id=session)
+        result = await self._invoke(
+            pending,
+            model,
+            session_id=session,
+            confirmation={
+                "token": pending["confirmation_token"],
+                "decision": "rejected",
+            },
+        )
+        self.assertEqual(result["final_response"], "درخواست انجام نشد.")
+        self.assertIsNone(result["last_tool_result"])
+        self.assertEqual(len(model.received), 1)
+        async with self.session_factory() as db:
+            stored = await db.get(Appointment, self.appointment.id)
+        self.assertEqual(stored.status, "scheduled")
+
+    async def test_approval_from_another_session_is_rejected(self):
+        model = FakeChatModel(
+            _call("cancel_appointment", {"appointment_id": self.appointment.id}),
+        )
+        pending = await self._invoke(
+            create_initial_state(), model, session_id="sess-owner"
+        )
+        token = pending["confirmation_token"]
+        result = await self._invoke(
+            pending,
+            model,
+            session_id="sess-attacker",
+            confirmation={"token": token, "decision": "approved"},
+        )
+        self.assertEqual(result["final_response"], "درخواست انجام نشد.")
+        self.assertIsNone(result["pending_action"])
+        async with self.session_factory() as db:
+            stored = await db.get(Appointment, self.appointment.id)
+        self.assertEqual(stored.status, "scheduled")
+
+    async def test_route_injection_cannot_bypass_confirmation(self):
+        model = FakeChatModel(AIMessage(content="متوجه نشدم."))
+        injected = create_initial_state()
+        injected["route"] = "execute_tool"
+        injected["selected_tool"] = "cancel_appointment"
+        injected["selected_tool_arguments"] = {"appointment_id": self.appointment.id}
+        injected["pending_tool_calls"] = [
+            {"tool_name": "__unknown_tool__", "arguments": {}, "tool_call_id": "bad-1"}
+        ]
+        result = await self._invoke(injected, model)
+        self.assertEqual(
+            result["last_tool_result"]["error"]["code"], "COMMON_VALIDATION_ERROR"
+        )
+        self.assertEqual(result["final_response"], "متوجه نشدم.")
         self.assertEqual(len(model.received), 1)
         async with self.session_factory() as db:
             stored = await db.get(Appointment, self.appointment.id)
