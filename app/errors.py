@@ -56,6 +56,16 @@ ERROR_CATALOG: dict[str, ErrorDefinition] = {
         "برنامه پزشک پیدا نشد.", "INFO", False,
         "STOP_AND_REPORT_NOT_FOUND", "INFO", "LOW",
     ),
+    "DENTAL_SERVICE_NOT_FOUND": ErrorDefinition(
+        "DENTAL_SERVICE_NOT_FOUND", 404,
+        "خدمت دندانپزشکی پیدا نشد.", "INFO", False,
+        "STOP_AND_REPORT_NOT_FOUND", "INFO", "LOW",
+    ),
+    "DENTAL_SERVICE_IN_USE": ErrorDefinition(
+        "DENTAL_SERVICE_IN_USE", 409,
+        "این خدمت به یک نوبت ثبت‌شده متصل است و قابل حذف نیست.",
+        "WARNING", False, "STOP_AND_REPORT_CONFLICT", "WARNING", "LOW",
+    ),
     "APPOINTMENT_INVALID_DATE_OR_TIME": ErrorDefinition(
         "APPOINTMENT_INVALID_DATE_OR_TIME", 400,
         "تاریخ یا ساعت واردشده معتبر نیست.", "INFO", False,
@@ -65,6 +75,26 @@ ERROR_CATALOG: dict[str, ErrorDefinition] = {
         "APPOINTMENT_INVALID_DATE", 400,
         "تاریخ واردشده معتبر نیست.", "INFO", False,
         "ASK_USER_TO_CORRECT_INPUT", "INFO", "LOW",
+    ),
+    "APPOINTMENT_NOT_FOUND": ErrorDefinition(
+        "APPOINTMENT_NOT_FOUND", 404,
+        "نوبت پیدا نشد.", "INFO", False,
+        "STOP_AND_REPORT_NOT_FOUND", "INFO", "HIGH",
+    ),
+    "APPOINTMENT_ALREADY_CANCELLED": ErrorDefinition(
+        "APPOINTMENT_ALREADY_CANCELLED", 409,
+        "این نوبت قبلاً لغو شده است.", "INFO", False,
+        "REPORT_ALREADY_CANCELLED", "INFO", "HIGH",
+    ),
+    "APPOINTMENT_NOT_CANCELLABLE": ErrorDefinition(
+        "APPOINTMENT_NOT_CANCELLABLE", 409,
+        "وضعیت فعلی این نوبت اجازه لغو آن را نمی‌دهد.", "WARNING", False,
+        "STOP_AND_REPORT_CONFLICT", "WARNING", "HIGH",
+    ),
+    "APPOINTMENT_NOT_RESCHEDULABLE": ErrorDefinition(
+        "APPOINTMENT_NOT_RESCHEDULABLE", 409,
+        "وضعیت فعلی این نوبت اجازه جابه‌جایی آن را نمی‌دهد.", "WARNING", False,
+        "STOP_AND_REPORT_CONFLICT", "WARNING", "HIGH",
     ),
     "APPOINTMENT_DOCTOR_NOT_SCHEDULED": ErrorDefinition(
         "APPOINTMENT_DOCTOR_NOT_SCHEDULED", 409,
@@ -81,20 +111,15 @@ ERROR_CATALOG: dict[str, ErrorDefinition] = {
         "این زمان قبلاً برای پزشک رزرو شده است.", "WARNING", False,
         "OFFER_AVAILABLE_SLOTS", "WARNING", "LOW",
     ),
-    "APPOINTMENT_DAILY_LIMIT": ErrorDefinition(
-        "APPOINTMENT_DAILY_LIMIT", 409,
-        "تعداد نوبت‌های فعال این بیمار در این روز به حد مجاز رسیده است.",
-        "WARNING", False, "EXPLAIN_LIMIT_AND_STOP", "WARNING", "HIGH",
+    "APPOINTMENT_SERVICE_INACTIVE": ErrorDefinition(
+        "APPOINTMENT_SERVICE_INACTIVE", 409,
+        "این خدمت در حال حاضر قابل رزرو نیست.", "INFO", False,
+        "OFFER_ANOTHER_SERVICE", "INFO", "LOW",
     ),
-    "APPOINTMENT_WEEKLY_LIMIT": ErrorDefinition(
-        "APPOINTMENT_WEEKLY_LIMIT", 409,
-        "تعداد نوبت‌های فعال این بیمار در این هفته به حد مجاز رسیده است.",
-        "WARNING", False, "EXPLAIN_LIMIT_AND_STOP", "WARNING", "HIGH",
-    ),
-    "APPOINTMENT_MONTHLY_LIMIT": ErrorDefinition(
-        "APPOINTMENT_MONTHLY_LIMIT", 409,
-        "تعداد نوبت‌های فعال این بیمار در این ماه به حد مجاز رسیده است.",
-        "WARNING", False, "EXPLAIN_LIMIT_AND_STOP", "WARNING", "HIGH",
+    "APPOINTMENT_DOCTOR_SERVICE_MISMATCH": ErrorDefinition(
+        "APPOINTMENT_DOCTOR_SERVICE_MISMATCH", 409,
+        "این پزشک خدمت انتخاب‌شده را ارائه نمی‌دهد.", "WARNING", False,
+        "OFFER_DOCTORS_FOR_SERVICE", "WARNING", "LOW",
     ),
     "DATABASE_ERROR": ErrorDefinition(
         "DATABASE_ERROR", 500,

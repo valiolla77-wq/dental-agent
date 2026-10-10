@@ -7,9 +7,7 @@ from app.routers.users import router as users_router
 from app.routers.doctors import router as doctors_router
 from app.routers.doctor_schedules import router as doctor_schedules_router
 from app.routers.appointments import router as appointments_router
-from app.routers.clinic_settings import (
-    router as clinic_settings_router,
-)
+from app.routers.dental_services import router as dental_services_router
 from app.error_handling import configure_error_handling
 
 @asynccontextmanager
@@ -32,7 +30,7 @@ app.include_router(patients_router)
 app.include_router(doctors_router)
 app.include_router(doctor_schedules_router)
 app.include_router(appointments_router)
-app.include_router(clinic_settings_router)
+app.include_router(dental_services_router)
 
 @app.get("/")
 def root():

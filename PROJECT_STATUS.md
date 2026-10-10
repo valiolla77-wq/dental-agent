@@ -3,6 +3,142 @@
 > آخرین وضعیت پروژه برای ادامه توسعه در Codex
 > پروژه: **طراحی و پیاده‌سازی سامانه مدیریت مطب دندانپزشکی با دستیار هوشمند مبتنی بر ایجنت**
 
+> **وضعیت زنده — به‌روزرسانی 2026-10-10:** این بخش مرجع وضعیت اجرایی فعلی است. بخش‌های شماره‌دار پایین‌تر شامل طراحی‌ها و گزارش‌های تاریخی مراحل قبلی‌اند؛ هرجا با این snapshot تعارض دارند، این snapshot معتبر است.
+
+## Project Overview
+
+Backend سامانه مدیریت مطب دندانپزشکی با FastAPI، SQLAlchemy Async و SQLite است. Booking Flow آماده است. LangGraph از Providerهای قابل انتخاب Ollama و OpenRouter پشتیبانی می‌کند؛ اتصال واقعی نیازمند تنظیم `.env` است و در این مرحله درخواست واقعی به OpenRouter آزمایش نشده است.
+
+## Current Architecture
+
+```text
+FastAPI Router → تابع‌های Service → AsyncSession / SQLAlchemy → SQLite
+User → LangGraph → LLM Provider → Allowlisted Tool → Service → Database
+```
+
+Router → Service → AsyncSession / SQLAlchemy → SQLite. BookingService جریان ثبت رزرو را بین PatientService و AppointmentService هماهنگ می‌کند و اعتبارسنجی دامنه را به AppointmentService واگذار می‌کند. Error Handling سراسری با AppError، Error Catalog و Request ID فعال است.
+
+## Implemented Features
+
+- Patient service و API CRUD
+- ایجاد Doctor از طریق Doctor Service
+- CRUD برنامه کاری پزشک از طریق Doctor Schedule Service
+- ساخت نوبت، فهرست نوبت‌های بیمار و زمان‌های خالی از طریق Appointment Service
+- Booking Flow با انتخاب خدمت فعال، پزشک فعال ارائه‌دهنده، تاریخ و Slot آزاد، سپس انتخاب Patient موجود یا ثبت Patient جدید با کد ملی
+- BookingService رزرو را در یک تراکنش انجام می‌دهد؛ اگر Validation رزرو شکست بخورد، Patient جدید نیز Rollback می‌شود.
+- چهار Agent Tool فقط‌خواندنی برای جستجوی خدمت، پزشک ارائه‌دهنده، Slotهای آزاد و نوبت‌های بیمار پیاده شده‌اند؛ LangGraph از Providerهای Ollama و OpenRouter از طریق Provider Factory استفاده می‌کند.
+- Tool عملیاتی `book_appointment` اضافه شده است؛ رزرو را فقط از طریق BookingService انجام می‌دهد و Human confirmation داخل Tool ندارد.
+- Tool عملیاتی `cancel_appointment` از AppointmentService استفاده می‌کند؛ فقط وضعیت `scheduled` را به `cancelled` تغییر می‌دهد.
+- Tool عملیاتی `reschedule_appointment` از AppointmentService استفاده می‌کند؛ فقط نوبت `scheduled` را به‌صورت تراکنشی جابه‌جا می‌کند و تاریخچه یا رکورد جداگانه نمی‌سازد.
+- Graph در `app/agent/` با State تایپ‌شده، registry ابزارهای allowlistشده، Decision Node مبتنی بر Chat Model، اجرای Tool و confirmation gate پیاده شده است. اجرای زنده نیازمند `.env` و Ollama server/model است.
+- Decision Node از طریق interface مستقل Provider، Tool Calling را اجرا می‌کند؛ Ollama با `ChatOllama` و OpenRouter با `ChatOpenRouter` پیاده شده‌اند. Fake LLM تستی جایگزین Provider در تست‌ها می‌شود.
+- اعتبارسنجی زمان نوبت با Schedule فعال؛ نوبت لغوشده Slot را آزاد می‌کند.
+- تبدیل روز Python به قرارداد Schedule پروژه: شنبه=۰ تا جمعه=۶
+- Error Contract و Request ID سمت سرور
+
+## In Progress
+
+- اجرای محلی با Ollama یا OpenRouter پس از تنظیم مقادیر `.env` و انتخاب مدل؛ اتصال واقعی OpenRouter هنوز اعتبارسنجی نشده است.
+- تأیید عملیات Write در وضعیت فعلی فقط با `confirmation_status` در Agent State کنترل می‌شود. این وضعیت به action تأییدشده متصل/امضا نشده و caller مورداعتماد باید state را حفظ کند؛ جعل یا تغییر State می‌تواند مسیر اجرا را دور بزند. اصلاح این مورد فعلاً انجام نشده است.
+- تثبیت تدریجی Core Backend و تست‌های خودکار.
+
+## Planned
+
+- Endpointهای HTTP برای لغو و جابه‌جایی نوبت؛ لغو از طریق Service و Agent Tool در دسترس است.
+- Authentication و Authorization/RBAC
+- Alembic و migrationهای پایگاه داده
+- Chat API، Authentication و Permission Context پیش از عرضه Agent به کاربر.
+- Authentication/OTP هنوز تصمیم‌گیری یا پیاده‌سازی نشده است.
+
+## Removed / Deprecated
+
+- ClinicSetting، API، مدل و Schema آن در 2026-10-06 از کد برنامه حذف شدند.
+- محدودیت قابل تنظیم تعداد نوبت بیمار در روز/هفته/ماه حذف شده است؛ هیچ محدودیت جایگزینی وجود ندارد.
+- جدول قدیمی `clinic_settings` ممکن است در SQLite محلی باقی مانده باشد؛ migration حذف جدول اجرا نشده و کد برنامه دیگر آن را import یا استفاده نمی‌کند.
+
+## Database Models
+
+- مدل‌های فعال: User، Patient، Doctor، DoctorSchedule، DentalService و Appointment.
+- Appointment شامل `service_id NOT NULL` با FK به `dental_services.id` است. همهٔ نوبت‌ها باید خدمت داشته باشند.
+- `DentalService` فیلدهای `id`, `name`, `description`, `is_active` دارد؛ duration، قیمت و دسته‌بندی اضافه نشده‌اند.
+- جدول `doctor_dental_services` رابطهٔ Many-to-Many پزشک و خدمت را با Unique Constraint روی زوج شناسه‌ها نگه می‌دارد.
+- SQLite محلی ارتقا یافت: دقیقاً ۷ نوبت تستی محیط توسعه حذف و جدول `appointments` با `service_id NOT NULL` بازسازی شد. نوبت‌های گذشته در سیستم واقعی حفظ می‌شوند؛ کد startup هیچ Appointmentی را خودکار حذف نمی‌کند.
+- `appointment_time` زمان رزرو/مراجعه است؛ `end_time` اضافه نشده است.
+
+## API / Router Status
+
+- Appointment Router صرفاً داده را به Service می‌دهد و خروجی را به Schema/پاسخ API تبدیل می‌کند.
+- فهرست خدمات فعال در `GET /dental-services/` (پیش‌فرض `active_only=true`)؛ مشاهده جزئیات در `GET /dental-services/{service_id}`.
+- پزشکان فعال ارائه‌دهنده یک خدمت در `GET /dental-services/{service_id}/doctors`؛ خدمات یک پزشک در `GET /doctors/{doctor_id}/services`.
+- `GET /appointments/available-slots/?doctor_id=…&appointment_date=…` تاریخ شمسی و زمان‌های آزاد شروع را برمی‌گرداند.
+- `POST /appointments/` برای سازگاری، یا `patient_id` می‌پذیرد یا `national_id`, `full_name`, `phone` را؛ در حالت دوم Patient با کد ملی پیدا/در صورت نبود ساخته می‌شود.
+- ایجاد و ویرایش Doctor می‌تواند `service_ids` دریافت کند.
+- ساخت Appointment نیازمند `service_id` است.
+- Clinic Settings Router دیگر ثبت نشده است.
+- شکل خروجی APIهای Appointment حفظ شده است.
+
+## Services
+
+- موجود: `patient_service.py`, `doctor_service.py`, `doctor_schedule_service.py`, `dental_service_service.py`, `appointment_service.py`, `booking_service.py`.
+- DentalService Service مسئول CRUD خدمت‌ها و ارتباط پزشک/خدمت است. Doctor Service ارتباط‌ها را هنگام ایجاد و ویرایش مدیریت می‌کند.
+- Appointment Service پیش از بررسی Schedule/Slot، فعال‌بودن خدمت و ارائهٔ آن توسط پزشک را اعتبارسنجی می‌کند.
+- Booking Service فقط Orchestration بیمار/رزرو را انجام می‌دهد؛ ایجاد Patient و همهٔ کنترل‌های Doctor، Service، Schedule و Slot در Serviceهای موجود باقی می‌مانند.
+
+## Agent Architecture
+
+لایهٔ Toolها در `app/agent_tools/` پیاده شده: چهار Tool فقط‌خواندنی، `book_appointment`، `cancel_appointment` و `reschedule_appointment`. Toolهای Write فقط Serviceهای موجود را فراخوانی می‌کنند. AsyncSession فقط به‌عنوان وابستگی اجرایی به تابع Tool داده می‌شود و در Schema ورودی Agent قرار ندارد؛ خود Toolها Query یا SQLAlchemy statement اجرا نمی‌کنند. نتیجه‌ها مدل مشخص موفق/خطا دارند و خطاها با Error Codeهای Catalog منتقل می‌شوند. Graph برای Write confirmation gate دارد؛ UI، API و تشخیص پاسخ طبیعی کاربر هنوز پیاده نشده‌اند و خود Toolها confirmation ندارند.
+
+LangGraph StateGraph به Chat Model متصل است. Protocol و Provider factory در `app/agent/llm.py` قرار دارد؛ configuration از `.env`/environment خوانده می‌شود و Providerهای Ollama و OpenRouter ثبت شده‌اند. OpenRouter از پکیج `langchain-openrouter` و `ChatOpenRouter` استفاده می‌کند؛ `OPENROUTER_API_KEY` فقط از environment یا `.env` محلی خوانده می‌شود و نمایش repr تنظیمات API key را حذف می‌کند. `OPENROUTER_HTTP_REFERER` و `OPENROUTER_APP_TITLE` اختیاری هستند. State با `create_initial_state` ساخته می‌شود و در حال حاضر checkpoint/memory پایدار ندارد.
+
+Registry در `app/agent/registry.py` هفت Tool موجود را با ورودی Pydantic و نوع read/write allowlist می‌کند و Schemaهای tool calling را برای Provider می‌سازد. مدل می‌تواند چند Tool Call زنجیره‌ای یا در یک پاسخ درخواست کند؛ گراف آن‌ها را generic و ترتیبی dispatch می‌کند و نتیجه استاندارد را به مدل بازمی‌فرستد. برای Write، pending action و confirmation prompt ساخته می‌شود و تا وضعیت `approved` فراخوانی Tool انجام نمی‌گیرد؛ `rejected` بدون اجرا پایان می‌یابد. System Prompt در `app/agent/prompts.py` جداست. Session دیتابیس فقط از بیرون در Graph Context تزریق می‌شود؛ Agent آن را ایجاد، بستن یا Query نمی‌کند.
+
+تنظیم‌های مشترک `AGENT_LLM_PROVIDER` (`ollama` یا `openrouter`)، `AGENT_LLM_MODEL`، `AGENT_LLM_BASE_URL` و `AGENT_LLM_TEMPERATURE` از `.env`/environment خوانده می‌شوند؛ نام مدل و URL در کد hard-code نشده‌اند. OpenRouter به `OPENROUTER_API_KEY` نیاز دارد و در نبود آن خطای پیکربندی امن می‌دهد. `OPENROUTER_HTTP_REFERER` و `OPENROUTER_APP_TITLE` اختیاری‌اند. `.env.example` فقط مقادیر نمونه/خالی دارد و `.env` در `.gitignore` باقی است. نصب وابستگی‌ها از `requirements.txt` انجام می‌شود و تست‌ها با `.venv\Scripts\python.exe -m unittest discover -s tests -v` بدون API key یا درخواست اینترنتی اجرا می‌شوند.
+
+پیش از عرضهٔ Agent زنده، هویت بیمار باید از Context احرازشده و مجاز استخراج شود؛ اکنون Tool داخلی `get_patient_appointments` با `patient_id` ورودی کار می‌کند و Authentication/RBAC وجود ندارد. معماری هدف: Agent → Tool → Service → Database؛ Agent دسترسی مستقیم به Database نخواهد داشت.
+
+## Tests
+
+- آخرین اجرای موفق کل مجموعه پیش از تغییرات Provider: **135 تست موفق، 0 ناموفق** با `.venv\Scripts\python.exe -m unittest discover -s tests -q`. اجرای فعلی پس از نصب Provider به‌دلیل مسدودشدن import باینری `_greenlet` توسط Application Control روی محیط اجرا نشده است؛ نتیجه پس از رفع محیط باید دوباره ثبت شود.
+- `pytest` در محیط `.venv` نصب نیست؛ تست‌های موجود با `unittest` اجرا می‌شوند و هیچ وابستگی جدیدی برای test runner اضافه نشده است.
+- `compileall` و بررسی import و `git diff --check` در همین مرحله اجرا شدند.
+- تست SQLite موقت Booking Flow: انتخاب خدمات و پزشک، Slot خالی، رزرو end-to-end، استفاده مجدد از بیمار، ساخت Patient جدید، Rollback رزرو ناموفق، خطاهای Doctor/Service، نبود Schedule و رزرو تکراری.
+- تست Appointment Service سناریوهای Slot معتبر/نامعتبر، بیمار/پزشک ناموجود، پزشک/خدمت غیرفعال، تطبیق Doctor-Service، روز هفته، Slot رزروشده/لغوشده و مرز پایان Schedule را پوشش می‌دهد.
+- `tests/test_agent_tools.py` رفتار خروجی کمینه، فیلتر خدمت/پزشک فعال، Slot رزروشده/لغوشده، Error Codeهای قابل تشخیص، ورودی نامعتبر و logging بدون ثبت عبارت جستجو را بررسی می‌کند.
+- `tests/test_book_appointment_tool.py` رزرو با بیمار موجود/جدید، رزرو تکراری، Doctor/Service نامعتبر یا غیرفعال، mismatch، Rollback، ورودی نامعتبر، خطاهای Database/Internal و عدم ثبت اطلاعات بیمار در Log را پوشش می‌دهد.
+- `tests/test_cancel_appointment_tool.py` لغو موفق، نوبت ناموجود/قبلاً لغوشده/غیرقابل‌لغو، ورودی نامعتبر، واگذاری به Service، ساختار خروجی و تبدیل خطاهای Database/Internal بدون افشای جزئیات را پوشش می‌دهد.
+- `tests/test_reschedule_appointment_tool.py` جابه‌جایی موفق، حالت‌های نامعتبر/تعارضی، رد وضعیت لغوشده یا غیرقابل‌جابه‌جایی، واگذاری به Service و rollback در شکست را پوشش می‌دهد.
+- `tests/test_agent_graph.py` پاسخ مستقیم، انتخاب/اجرای Read، tool result/error، چند Tool Call، confirmation و رد Write، حفظ Error Code و مرز Session را با Fake Chat Model تست می‌کند.
+- `tests/test_agent_llm.py` خواندن تنظیمات، اعتبارسنجی config، ساخت ChatOllama و ChatOpenRouter بدون درخواست شبکه، عدم نمایش API key در repr/log، خطای نبود کلید OpenRouter و سازگاری schemaهای Registry با bind_tools را تست می‌کند.
+- تست Graph عدم افشای جزئیات استثنای Provider در log یا پاسخ عمومی را بررسی می‌کند. تست‌های Agent با Fake اجرا می‌شوند؛ هیچ API key واقعی لازم نیست.
+- DentalService به‌صورت پیش‌فرض فقط خدمت‌های فعال را فهرست می‌کند؛ برای مشاهده همهٔ خدمت‌ها `active_only=false` قابل استفاده است.
+
+## Important Architectural Decisions
+
+- Errorها با Error Code پایدار مدیریت می‌شوند؛ منطق مصرف‌کننده نباید متن پیام را بررسی کند.
+- Request ID را Server تولید می‌کند و در Header و Error Envelope یکسان است.
+- `slot_duration_minutes` فاصله بین زمان‌های شروع Slotهاست، نه مدت قطعی ویزیت. فقط زمان شروع‌های `< end_time` قابل رزرو هستند.
+- تنها وضعیت `scheduled` Slot را اشغال می‌کند.
+- رابطهٔ `Doctor ↔ DentalService` از نوع Many-to-Many است؛ برای رزرو فقط پزشک ارائه‌دهندهٔ خدمت انتخاب‌شده مجاز است.
+- `DentalService` فعلاً `duration_minutes` ندارد. `slot_duration_minutes` فاصلهٔ زمان شروع Slotهای قابل رزرو است و مدت ویزیت را تعیین نمی‌کند.
+- تمام Appointmentها باید خدمت داشته باشند؛ ارتقای دیتابیس هیچ منطق خودکاری برای حذف نوبت‌های گذشته ندارد.
+- پزشک غیرفعال، خدمت غیرفعال، یا عدم ارائهٔ خدمت انتخابی، رزرو را متوقف می‌کند.
+- انتخاب Tool از Tool Call مدل انجام می‌شود؛ همهٔ callها با Registry allowlistشده تطبیق می‌یابند و call نامعتبر به‌عنوان خطای Catalog شده به مدل بازگردانده می‌شود.
+- Write Tool فقط با pending action تأییدشده اجرا می‌شود. UI/API و parser پاسخ طبیعی «بله/خیر» در این مرحله وجود ندارند؛ تأیید از طریق وضعیت صریح State به گراف بازگردانده می‌شود.
+- LangGraph وابستگی مستقیم runtime پروژه است؛ `langgraph==1.2.12`, `langchain-ollama==1.1.0` و `python-dotenv==1.2.4` ثبت شده‌اند.
+- Providerها: `ollama` و `openrouter`. OpenRouter از `langchain-openrouter==0.2.9` استفاده می‌کند؛ به‌دلیل ناسازگاری dependency نسخه جاری SDK OpenRouter با Pydantic pin پروژه، SDK transitive روی `openrouter==0.9.2` نگه داشته شده است. OpenAI-compatible API توسط Provider integration اختصاصی LangChain به کار می‌رود.
+- مدل زنده با API key یا endpoint خارجی آزمایش نشده است. اجرای OpenRouter نیازمند `AGENT_LLM_PROVIDER=openrouter`، نام مدل، base URL، temperature و `OPENROUTER_API_KEY` در environment یا `.env` محلی است. Secret نمونه یا واقعی در repository ثبت نمی‌شود.
+- ابزارهای زنجیره‌ای در گراف محدودیت سفارشی تعداد ندارند؛ نسخه فعلی LangGraph در زمان اجرا recursion limit پیش‌فرض بالایی (`10007`) دارد. برای جلوگیری از هزینه/حلقه، باید سقف مناسب صریحاً تعیین شود.
+- بازبینی امنیتی 2026-10-10: Tool output با Registry و Pydantic Schema اعتبارسنجی می‌شود؛ graph به مدل Session نمی‌دهد؛ exceptionهای مدل/tool به خروجی عمومی منتقل نمی‌شوند و log فقط نوع exception را ثبت می‌کند. متن پیام کاربر ممکن است برای تصمیم‌گیری به LLM ارسال شود و شامل PII باشد؛ history Tool call برای نوبت‌های بعدی فیلدهای ملی، نام، تلفن و reason را حذف می‌کند. Confirmation هنوز به State قابل اعتماد caller وابسته است و action نمایش‌داده‌شده را bind نمی‌کند؛ کاربر فعلاً اصلاح امنیتی را نخواسته است.
+- محدودیت‌های ClinicSetting و Error Codeهای `APPOINTMENT_DAILY_LIMIT`, `APPOINTMENT_WEEKLY_LIMIT`, `APPOINTMENT_MONTHLY_LIMIT` حذف شده‌اند.
+
+## Current Next Step
+
+**طراحی Chat API و Context احرازشده برای Single-Agent**؛ سپس افزودن persistence امن برای conversation/confirmation. پاسخ «بله/خیر» و API واقعی هنوز پیاده نشده‌اند.
+
+---
+
+یادداشت: اطلاعات پس از این خط، سابقه طراحی و مراحل قبلی پروژه را نگه می‌دارد و لزوماً بیانگر وضعیت اجرایی امروز نیست.
+
 ---
 
 # 1. معرفی پروژه
@@ -247,7 +383,7 @@ Server Restart
 
 ---
 
-# 7. ساختار فعلی پروژه
+# 7. ساختار اولیه پروژه (تاریخی؛ برای ساختار جاری به snapshot ابتدای سند رجوع شود)
 
 ```text
 dental-agent/
@@ -448,7 +584,7 @@ no_show
 
 ---
 
-## ClinicSetting
+## ClinicSetting (مدل تاریخی؛ از 2026-10-06 حذف شده)
 
 ```text
 clinic_settings
@@ -669,7 +805,7 @@ HTTP 409
 
 ---
 
-# 16. Patient Appointment Limits
+# 16. Patient Appointment Limits (قابلیت حذف‌شده؛ شرح تاریخی)
 
 سه محدودیت قابل تنظیم هستند:
 
@@ -918,22 +1054,9 @@ day_of_week = 1
 
 ---
 
-# 20. Clinic Settings فعلی
+# 20. Clinic Settings — حذف‌شده
 
-آخرین تنظیمی که برای تست اعمال شده:
-
-```json
-{
-  "id": 1,
-  "max_appointments_per_day": 0,
-  "max_appointments_per_week": 0,
-  "max_appointments_per_month": 2
-}
-```
-
-این مقدار تستی است.
-
-قبل از ادامه توسعه باید مشخص شود تنظیمات مناسب Development چه باشند.
+ClinicSetting و API آن در 2026-10-06 از برنامه حذف شدند. محدودیت‌های روزانه، هفتگی و ماهانهٔ بیمار نیز دیگر اجرا نمی‌شوند. جزئیات تنظیمات و تست‌های تاریخی در بخش‌های قبلی صرفاً سابقهٔ نسخهٔ پیش از حذف هستند. جدول قدیمی SQLite عمداً با migration حذف نشده است.
 
 ---
 
@@ -1044,7 +1167,7 @@ Month = Persian/Jalali Month
 
 ---
 
-# 24. اصول Error Contract
+# 24. اصول اولیه Error Contract (تاریخی؛ پیاده‌سازی فعلی در snapshot ابتدای سند)
 
 Error System باید برای کل پروژه طراحی شود، نه فقط Appointment.
 
@@ -1130,7 +1253,7 @@ INTERNAL_SERVER_ERROR
 
 ---
 
-# 25. Error Catalog پیشنهادی
+# 25. Error Catalog پیشنهادی اولیه (تاریخی؛ مرجع فعلی `app/errors.py` است)
 
 این Catalog هنوز نهایی نشده است و باید قبل از پیاده‌سازی بررسی شود.
 
@@ -1591,7 +1714,6 @@ Roles
 Permissions
 Doctors
 Schedules
-Clinic Settings
 FAQs
 Audit Logs
 Agent Logs
@@ -1785,37 +1907,9 @@ Alembic
 
 ---
 
-# 49. Testing
+# 49. Testing (وضعیت فعلی)
 
-فعلاً تست‌ها دستی و از طریق Swagger انجام شده‌اند.
-
-در ادامه باید:
-
-```text
-pytest
-pytest-asyncio
-```
-
-بررسی شوند.
-
-حداقل تست‌ها:
-
-```text
-Patient CRUD
-Doctor CRUD
-Schedule CRUD
-Appointment creation
-Invalid slot
-Double booking
-Daily limit
-Weekly limit
-Monthly limit
-Cancel
-Reschedule
-Authentication
-Authorization
-Agent tools
-```
+تست‌های خودکار با `unittest` و SQLite موقت/in-memory در پوشهٔ `tests/` وجود دارند. آخرین اجرای کل مجموعه در 2026-10-07 شامل 51 تست موفق بوده است. `pytest` در محیط نصب نیست و به‌دلیل در دسترس نبودن PyPI نتوانستم آن را نصب یا اجرا کنم. ClinicSetting و محدودیت‌های نوبت در کد فعلی وجود ندارند؛ تست‌های قدیمی این قابلیت‌ها فقط سابقهٔ دستی نسخهٔ پیشین‌اند.
 
 ---
 
@@ -1995,29 +2089,13 @@ LLM نباید Authority باشد.
 
 ---
 
-# 56. وضعیت فعلی Error Handling
+# 56. وضعیت فعلی Error Handling (به‌روزرسانی‌شده)
 
-### پیاده شده
-
-* HTTP Status مناسب برای برخی خطاها
-* HTTP 400
-* HTTP 404
-* HTTP 409
-* HTTP 422 از FastAPI/Pydantic
-
-### هنوز پیاده نشده
-
-* Global Exception Handler
-* Error Code
-* Error Catalog
-* Standard Error Response
-* Request ID
-* Error Correlation
-* Internal Error Logging
+# Error Contract، Error Catalog و Handlerهای Validation/HTTP/Database/Internal پیاده شده‌اند. Request ID را Server تولید و در Header و Error Envelope بازمی‌گرداند؛ جزئیات حساس خطاهای داخلی فقط در Log ثبت می‌شود. جزئیات اجرایی در snapshot ابتدای سند آمده است.
 
 ---
 
-# 57. کار بعدی پیشنهادی
+# 57. سابقهٔ برنامهٔ اولیهٔ Error Handling (تکمیل‌شده)
 
 قبل از ادامه Appointment API:
 
@@ -2134,7 +2212,9 @@ Laya
 
 ---
 
-# 61. Current Known Issues / Decisions To Review
+# 61. موارد باز فعلی
+
+این فهرست تاریخی است؛ وضعیت جاری در snapshot ابتدای سند معتبر است. موارد جاری شامل Authentication، Authorization/RBAC، migration دیتابیس و Chat API هستند. لغو و جابه‌جایی از Service و Agent Tool پشتیبانی می‌شوند؛ Endpointهای HTTP آن‌ها هنوز اضافه نشده‌اند. ClinicSetting و محدودیت تعداد نوبت حذف شده‌اند.
 
 ## 1. Persian Week
 
@@ -2168,11 +2248,11 @@ Business Logic هنوز در Routerها قرار دارد.
 
 ## 7. Appointment Cancellation
 
-هنوز پیاده نشده.
+Service و Agent Tool پیاده شده‌اند؛ HTTP endpoint هنوز برنامه‌ریزی نشده است.
 
 ## 8. Appointment Reschedule
 
-هنوز پیاده نشده.
+Service تراکنشی و Agent Tool پیاده شده‌اند؛ HTTP endpoint هنوز برنامه‌ریزی نشده است.
 
 ## 9. Database Migration
 
@@ -2186,30 +2266,7 @@ Alembic هنوز اضافه نشده.
 
 # 62. Definition of Done برای Core Backend
 
-قبل از ورود جدی به Agent باید حداقل موارد زیر آماده باشند:
-
-```text
-[ ] Patient CRUD
-[x] Doctor Schedule CRUD
-[ ] Doctor CRUD کامل
-[x] Appointment Create
-[x] Available Slots
-[x] Double Booking Protection
-[x] Daily Limit
-[x] Weekly Limit
-[x] Monthly Limit
-[ ] Cancel Appointment
-[ ] Reschedule Appointment
-[ ] Standard Error Contract
-[ ] Authentication
-[ ] Authorization
-[ ] RBAC
-[ ] Patient Notes
-[ ] FAQ
-[ ] Audit Log
-[ ] Service Layer
-[ ] Automated Tests
-```
+چک‌لیست اولیهٔ این بخش منسوخ شده است؛ وضعیت فعلی و موارد باقی‌مانده در snapshot ابتدای سند و بخش 61 ثبت شده‌اند. Appointment limitهای ClinicSetting دیگر بخشی از Definition of Done نیستند.
 
 ---
 
@@ -2224,10 +2281,10 @@ Alembic هنوز اضافه نشده.
 [ ] Tool Interface
 [ ] Tool Permission Layer
 [ ] check_available_slots
-[ ] book_appointment
-[ ] cancel_appointment
-[ ] reschedule_appointment
-[ ] get_patient_appointments
+[x] book_appointment
+[x] cancel_appointment
+[x] reschedule_appointment
+[x] get_patient_appointments
 [ ] get_patient_history
 [ ] search_faq
 [ ] LangChain Agent
@@ -2398,6 +2455,8 @@ Human Oversight
 
 # 68. Current Project Status Summary
 
+این نمودار تاریخی است و دیگر بیانگر درصد یا وضعیت جاری پروژه نیست؛ snapshot ابتدای سند مرجع وضعیت است.
+
 ```text
 Backend:
 ████████░░  ~80% Core اولیه
@@ -2458,7 +2517,7 @@ Automated Tests:
 
 ---
 
-# 70. Last Known Successful Tests
+# 70. تست‌های دستی موفق نسخهٔ پیشین (تاریخی)
 
 آخرین تست‌های موفق:
 
@@ -2481,7 +2540,7 @@ Automated Tests:
 
 ---
 
-# 71. Last Known Database Test Data
+# 71. Database Test Data نسخهٔ پیشین (تاریخی، حذف‌نشده از دیتابیس محلی)
 
 Patient:
 
