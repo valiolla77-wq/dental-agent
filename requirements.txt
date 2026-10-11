@@ -16,3 +16,7 @@ python-dotenv==1.2.4
 
 # Used by FastAPI/Starlette TestClient in the current tests
 httpx==0.28.1
+
+# Generic provider SDKs for custom OpenAI-/Anthropic-compatible endpoints
+langchain-openai==1.6.7
+langchain-anthropic==1.7.5

@@ -35,6 +35,7 @@ Router → Service → AsyncSession / SQLAlchemy → SQLite. BookingService جر
 - اعتبارسنجی زمان نوبت با Schedule فعال؛ نوبت لغوشده Slot را آزاد می‌کند.
 - تبدیل روز Python به قرارداد Schedule پروژه: شنبه=۰ تا جمعه=۶
 - Error Contract و Request ID سمت سرور
+- Provider Factory عمومی در `app/agent/provider_factory.py` با قرارداد `ProviderSettings` در `app/config.py`: پروتکل `openai` یا `anthropic` (بدون وابستگی به نام شرکت)، `base_url` سفارشی صریح با اعتبارسنجی http/https و بدون credential در URL، `api_key` به‌صورت `SecretStr` (خارج از repr و serialization)، همراه `temperature`/`max_tokens`/`timeout`/`max_retries`. ساخت مدل با `ChatOpenAI` و `ChatAnthropic` بدون جایگزینی آدرس پیش‌فرض یا API Key محیطی؛ تنظیمات فقط از منبع مورداعتماد سمت سرور خوانده می‌شود. اتصال به لایه تنظیمات مدیر سیستم و کنترل دسترسی مرحله بعد است.
 
 ## In Progress
 
