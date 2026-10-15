@@ -6,9 +6,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.auth.dependencies import require_admin
 from app.database import get_db
 from app.models.base import Base
 from app.models.doctor import Doctor
+from app.models.user import User
 from app.routers.doctors import router as doctors_router
 from app.services import doctor_service
 
@@ -76,7 +78,17 @@ class DoctorServiceTests(unittest.IsolatedAsyncioTestCase):
         async def fake_db():
             yield None
 
+        async def fake_admin():
+            return User(
+                full_name="Test Admin",
+                phone="09000000099",
+                password_hash="unused-hash",
+                role="admin",
+                is_active=True,
+            )
+
         app.dependency_overrides[get_db] = fake_db
+        app.dependency_overrides[require_admin] = fake_admin
         created_doctor = Doctor(
             id=7,
             full_name="دکتر نمونهٔ ساختگی",

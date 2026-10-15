@@ -131,6 +131,26 @@ ERROR_CATALOG: dict[str, ErrorDefinition] = {
         "خطای داخلی رخ داد. لطفاً بعداً دوباره تلاش کنید.", "ERROR", False,
         "HANDOFF_TO_HUMAN", "ERROR", "MEDIUM",
     ),
+    "COMMON_UNAUTHORIZED": ErrorDefinition(
+        "COMMON_UNAUTHORIZED", 401,
+        "احراز هویت ناموفق یا توکن نامعتبر.", "INFO", False,
+        "ASK_USER_TO_LOGIN", "INFO", "LOW",
+    ),
+    "COMMON_FORBIDDEN": ErrorDefinition(
+        "COMMON_FORBIDDEN", 403,
+        "دسترسی مجاز نیست.", "WARNING", False,
+        "STOP_AND_REPORT_FORBIDDEN", "WARNING", "LOW",
+    ),
+    "COMMON_BAD_REQUEST": ErrorDefinition(
+        "COMMON_BAD_REQUEST", 400,
+        "درخواست معتبر نیست.", "INFO", False,
+        "ASK_USER_TO_CORRECT_INPUT", "INFO", "LOW",
+    ),
+    "COMMON_CONFLICT": ErrorDefinition(
+        "COMMON_CONFLICT", 409,
+        "درخواست با وضعیت فعلی سیستم تضاد دارد.", "WARNING", False,
+        "STOP_AND_REPORT_CONFLICT", "WARNING", "LOW",
+    ),
 }
 
 

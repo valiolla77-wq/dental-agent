@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import require_admin
 from app.database import get_db
+from app.models.user import User
 from app.schemas.doctor import (
     DoctorCreate,
     DoctorResponse,
@@ -22,6 +24,7 @@ router = APIRouter(
 async def create_doctor(
     doctor: DoctorCreate,
     db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
 ):
     new_doctor = await doctor_service.create_doctor(
         db=db,
@@ -38,6 +41,7 @@ async def update_doctor(
     doctor_id: int,
     doctor: DoctorUpdate,
     db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
 ):
     updated_doctor = await doctor_service.update_doctor(
         db=db,

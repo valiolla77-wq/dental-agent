@@ -134,10 +134,18 @@ async def validation_error_handler(
 async def http_error_handler(
     request: Request, exc: StarletteHTTPException
 ) -> JSONResponse:
-    if exc.status_code == 404:
+    if exc.status_code == 400:
+        code = "COMMON_BAD_REQUEST"
+    elif exc.status_code == 401:
+        code = "COMMON_UNAUTHORIZED"
+    elif exc.status_code == 403:
+        code = "COMMON_FORBIDDEN"
+    elif exc.status_code == 404:
         code = "COMMON_NOT_FOUND"
     elif exc.status_code == 405:
         code = "COMMON_METHOD_NOT_ALLOWED"
+    elif exc.status_code == 409:
+        code = "COMMON_CONFLICT"
     else:
         # Application routes use AppError for catalogued client errors.
         code = "INTERNAL_ERROR"

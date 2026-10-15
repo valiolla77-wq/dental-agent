@@ -20,3 +20,6 @@ httpx==0.28.1
 # Generic provider SDKs for custom OpenAI-/Anthropic-compatible endpoints
 langchain-openai==1.6.7
 langchain-anthropic==1.7.5
+
+# JWT for authentication
+PyJWT==2.8.0

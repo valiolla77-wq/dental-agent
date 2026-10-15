@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+import os
 
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -7,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.appointment import Appointment
 from app.models.base import Base
 
-DATABASE_URL = "sqlite+aiosqlite:///./dental_agent.db"
+# Allow DATABASE_URL to be configured via environment variable for testing
+# Default to the real database file for production
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dental_agent.db")
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 

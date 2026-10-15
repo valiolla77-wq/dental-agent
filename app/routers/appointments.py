@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.models.appointment import Appointment
+from app.models.user import User
 from app.schemas.appointment import AppointmentCreate, AppointmentResponse
 from app.services import appointment_service, booking_service
 from app.utils.date_utils import gregorian_to_jalali
@@ -37,6 +39,7 @@ def _appointment_response(appointment: Appointment) -> AppointmentResponse:
 async def create_appointment(
     appointment: AppointmentCreate,
     db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
 ):
     created = await booking_service.create_booking(
         db=db,
@@ -60,6 +63,7 @@ async def create_appointment(
 async def get_patient_appointments(
     patient_id: int,
     db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
 ):
     appointments = await appointment_service.get_patient_appointments(
         db,
@@ -73,6 +77,7 @@ async def get_available_slots(
     doctor_id: int,
     appointment_date: str,
     db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
 ):
     available_slots = await appointment_service.get_available_slots(
         db,

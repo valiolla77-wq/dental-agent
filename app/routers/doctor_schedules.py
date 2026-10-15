@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import require_admin
 from app.database import get_db
+from app.models.user import User
 from app.schemas.doctor_schedule import (
     DoctorScheduleCreate,
     DoctorScheduleResponse,
@@ -19,6 +21,7 @@ router = APIRouter(
 async def create_doctor_schedule(
     schedule: DoctorScheduleCreate,
     db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
 ):
     new_schedule = await doctor_schedule_service.create_doctor_schedule(
         db=db,
@@ -49,6 +52,7 @@ async def update_doctor_schedule(
     schedule_id: int,
     schedule_data: DoctorScheduleUpdate,
     db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
 ):
     schedule = await doctor_schedule_service.update_doctor_schedule(
         db=db,
@@ -65,6 +69,7 @@ async def update_doctor_schedule(
 async def delete_doctor_schedule(
     schedule_id: int,
     db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
 ):
     deleted_schedule_id = await doctor_schedule_service.delete_doctor_schedule(
         db,

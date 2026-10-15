@@ -6,11 +6,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.auth.dependencies import require_admin
 from app.database import get_db
 from app.errors import AppError
 from app.models.base import Base
 from app.models.doctor import Doctor
 from app.models.doctor_schedule import DoctorSchedule
+from app.models.user import User
 from app.routers.doctor_schedules import router as doctor_schedules_router
 from app.services import doctor_schedule_service
 
@@ -177,7 +179,17 @@ class DoctorScheduleRouterContractTests(unittest.TestCase):
         async def fake_db():
             yield None
 
+        async def fake_admin():
+            return User(
+                full_name="Test Admin",
+                phone="09000000099",
+                password_hash="unused-hash",
+                role="admin",
+                is_active=True,
+            )
+
         app.dependency_overrides[get_db] = fake_db
+        app.dependency_overrides[require_admin] = fake_admin
         schedule = DoctorSchedule(
             id=31,
             doctor_id=7,
