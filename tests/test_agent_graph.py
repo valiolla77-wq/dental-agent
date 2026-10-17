@@ -11,6 +11,7 @@ from app.models.base import Base
 from app.models.dental_service import DentalService
 from app.models.doctor import Doctor
 from app.models.patient import Patient
+from app.models.user import User
 
 
 class FakeChatModel:
@@ -79,6 +80,14 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
             context = {
                 "db": db,
                 "llm": model or FakeChatModel(AIMessage(content="پاسخ آزمایشی")),
+                # Trusted server-side actor for tool authorization checks.
+                "actor": User(
+                    full_name="Graph Probe",
+                    phone="09900000111",
+                    password_hash="unused-hash",
+                    role="receptionist",
+                    is_active=True,
+                ),
             }
             if session_id is not None:
                 context["session_id"] = session_id

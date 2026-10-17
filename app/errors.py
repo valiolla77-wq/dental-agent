@@ -151,6 +151,29 @@ ERROR_CATALOG: dict[str, ErrorDefinition] = {
         "درخواست با وضعیت فعلی سیستم تضاد دارد.", "WARNING", False,
         "STOP_AND_REPORT_CONFLICT", "WARNING", "LOW",
     ),
+    "PATIENT_ACCOUNT_NOT_LINKED": ErrorDefinition(
+        "PATIENT_ACCOUNT_NOT_LINKED", 403,
+        "حساب بیمار شما هنوز به پرونده‌ای پیوست نشده است؛ لطفاً با پذیرش تماس بگیرید.",
+        "WARNING", False,
+        "ASK_USER_TO_CONTACT_RECEPTION", "WARNING", "HIGH",
+    ),
+    "COMMON_TOO_MANY_REQUESTS": ErrorDefinition(
+        "COMMON_TOO_MANY_REQUESTS", 429,
+        "درخواست‌های شما بیش از حد مجاز است؛ لطفاً کمی بعد تلاش کنید.",
+        "WARNING", True,
+        "ASK_USER_TO_RETRY_LATER", "INFO", "LOW",
+    ),
+    "COMMON_SERVICE_UNAVAILABLE": ErrorDefinition(
+        "COMMON_SERVICE_UNAVAILABLE", 503,
+        "سرویس موردنظر در حال حاضر در دسترس نیست.", "ERROR", True,
+        "HANDOFF_TO_HUMAN", "ERROR", "LOW",
+    ),
+    "AGENT_PROVIDER_NOT_CONFIGURED": ErrorDefinition(
+        "AGENT_PROVIDER_NOT_CONFIGURED", 503,
+        "اتصال به مدل زبانی پیکربندی نشده است؛ لطفاً بعداً تلاش کنید.",
+        "ERROR", False,
+        "HANDOFF_TO_HUMAN", "ERROR", "LOW",
+    ),
 }
 
 

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.appointment import Appointment
 from app.models.base import Base
+from app.db_migration import run_additive_migrations
 
 # Allow DATABASE_URL to be configured via environment variable for testing
 # Default to the real database file for production
@@ -58,6 +59,7 @@ async def ensure_appointment_service_id_required(conn) -> None:
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await run_additive_migrations(conn)
         await ensure_appointment_service_id_required(conn)
 
 

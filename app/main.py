@@ -10,6 +10,7 @@ from app.routers.appointments import router as appointments_router
 from app.routers.dental_services import router as dental_services_router
 from app.auth import auth_router
 from app.error_handling import configure_error_handling
+from app.routers.agent_chat import router as agent_chat_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,6 +28,7 @@ app = FastAPI(
 configure_error_handling(app)
 
 app.include_router(auth_router)
+app.include_router(agent_chat_router)
 app.include_router(users_router)
 app.include_router(patients_router)
 app.include_router(doctors_router)

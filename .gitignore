@@ -20,6 +20,7 @@ env/
 *.sqlite
 *.sqlite3
 *.log
+*.err
 
 # Test, coverage, and tool caches
 .pytest_cache/

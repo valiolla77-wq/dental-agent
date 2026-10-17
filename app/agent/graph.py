@@ -23,7 +23,9 @@ from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.registry import TOOL_REGISTRY, ToolDefinition, get_llm_tool_schemas
 from app.agent.state import AgentState, ConversationMessage, PendingAction, PendingToolCall
 from app.agent_tools.schemas import AgentToolError
-from app.errors import ERROR_CATALOG
+from app.auth.permissions import authorize_tool_call
+from app.errors import ERROR_CATALOG, AppError
+from app.models.user import User
 
 
 logger = logging.getLogger("dental_agent.agent")
@@ -31,11 +33,13 @@ logger = logging.getLogger("dental_agent.agent")
 
 class AgentContext(TypedDict, total=False):
     """Trusted per-invoke inputs from the host: dependencies, session identity,
-    and the confirmation decision. Nothing here round-trips through AgentState."""
+    the authenticated actor, and the confirmation decision. Nothing here
+    round-trips through AgentState."""
 
     db: AsyncSession
     llm: ToolCallingChatModel
     session_id: str | None
+    actor: User | None
     confirmation: ConfirmationDecision
 
 
@@ -193,6 +197,8 @@ async def _agent_decision_node(
         # session, tool, and displayed arguments; records are single-use.
         decision = runtime.context.get("confirmation")
         session_id = runtime.context.get("session_id")
+        actor = runtime.context.get("actor")
+        user_id = actor.id if actor is not None else None
         legacy_rejected = state.get("confirmation_status", "not_required") == "rejected"
         context_rejected = (
             isinstance(decision, dict) and decision.get("decision") == "rejected"
@@ -202,7 +208,7 @@ async def _agent_decision_node(
             token = state.get("confirmation_token")
             if isinstance(decision, dict) and decision.get("token"):
                 token = decision.get("token")
-            confirmation_store.consume(token, session_id=session_id)
+            confirmation_store.consume(token, session_id=session_id, user_id=user_id)
             return _finish_rejected_confirmation(state)
 
         if not (isinstance(decision, dict) and decision.get("decision") == "approved"):
@@ -212,7 +218,9 @@ async def _agent_decision_node(
                 "route": "confirmation",
             }
 
-        record = confirmation_store.consume(decision.get("token"), session_id=session_id)
+        record = confirmation_store.consume(
+            decision.get("token"), session_id=session_id, user_id=user_id
+        )
         if (
             record is None
             or record.tool_name != pending_action.get("tool_name")
@@ -403,11 +411,14 @@ def _confirmation_node(
 ) -> dict[str, Any]:
     action = state.get("pending_action")
     confirmation_token = None
+    actor = runtime.context.get("actor")
+    user_id = actor.id if actor is not None else None
     if isinstance(action, dict):
         definition = TOOL_REGISTRY.get(action.get("tool_name") or "")
         if definition is not None and definition.operation == "write":
             record = confirmation_store.issue(
                 session_id=runtime.context.get("session_id"),
+                user_id=user_id,
                 tool_name=action.get("tool_name") or "",
                 arguments=action.get("arguments") or {},
                 tool_call_id=action.get("tool_call_id") or str(uuid4()),
@@ -441,6 +452,14 @@ async def _tool_execution_node(
         result = {"ok": False, "data": None, "error": error.model_dump(mode="json")}
     else:
         try:
+            # Authorization choke point: identity comes only from the trusted
+            # host context. No handler runs without a permitted actor.
+            await authorize_tool_call(
+                runtime.context["db"],
+                runtime.context.get("actor"),
+                name or "",
+                arguments if isinstance(arguments, dict) else {},
+            )
             validated = definition.input_schema.model_validate(arguments)
             result_object = await definition.handler(
                 runtime.context["db"],
@@ -448,6 +467,9 @@ async def _tool_execution_node(
             )
             result = result_object.model_dump(mode="json")
             error = result_object.error
+        except AppError as exc:
+            error = _catalog_error(exc.code)
+            result = {"ok": False, "data": None, "error": error.model_dump(mode="json")}
         except ValidationError:
             error = _catalog_error("COMMON_VALIDATION_ERROR")
             result = {"ok": False, "data": None, "error": error.model_dump(mode="json")}

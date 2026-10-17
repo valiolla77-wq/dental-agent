@@ -617,7 +617,7 @@ class TestEndpointProtection(unittest.TestCase):
         _delete_user(self.admin_phone)
         _delete_user(self.user_phone)
         admin = _create_user(self.admin_phone, "admin-pass-123", role="admin")
-        regular = _create_user(self.user_phone, "user-pass-123", role="user")
+        regular = _create_user(self.user_phone, "user-pass-123", role="receptionist")
         self.admin_token = create_access_token(subject=str(admin.id))
         self.user_token = create_access_token(subject=str(regular.id))
 

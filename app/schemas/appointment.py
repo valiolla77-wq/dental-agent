@@ -1,4 +1,4 @@
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 class AppointmentCreate(BaseModel):
@@ -32,6 +32,21 @@ class AppointmentCreate(BaseModel):
                 "national_id, full_name, and phone must all be provided"
             )
         return self
+
+
+class AppointmentReschedule(BaseModel):
+    """New date/time for rescheduling a scheduled appointment."""
+
+    appointment_date: str
+    appointment_time: str
+
+    @field_validator("appointment_date", "appointment_time")
+    @classmethod
+    def normalize_schedule_text(cls, value: str) -> str:
+        normalized = (value or "").strip()
+        if not normalized:
+            raise ValueError("value cannot be blank")
+        return normalized
 
 
 class AppointmentResponse(BaseModel):

@@ -1,11 +1,14 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Literal
 
 
 class UserCreate(BaseModel):
     full_name: str
     phone: str
     password: str
-    role: str
+    role: Literal["admin", "receptionist", "doctor", "patient"] = Field(
+        description="Staff role assigned explicitly by an administrator."
+    )
 
 
 class UserResponse(BaseModel):
