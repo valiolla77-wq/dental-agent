@@ -53,13 +53,21 @@ def _patient(session, pid, national_id, phone, user_id=None):
     return patient
 
 
-def _appointment(session, aid, patient_id, doctor_id=1, service_id=1):
+def _appointment(
+    session,
+    aid,
+    patient_id,
+    doctor_id=1,
+    service_id=1,
+    appointment_time=None,
+):
     appointment = Appointment(
         id=aid,
         patient_id=patient_id,
         doctor_id=doctor_id,
         service_id=service_id,
-        appointment_time=datetime(2026, 10, 10, 10, 0),
+        appointment_time=appointment_time
+        or datetime(2026, 10, 10, 10, 0),
         status="scheduled",
     )
     session.add(appointment)
@@ -182,7 +190,12 @@ class AppointmentAccessTests(unittest.IsolatedAsyncioTestCase):
             self.session, 21, "2100000000", "09110000003", user_id=3
         )
         self.own_appt = _appointment(self.session, 100, 20)
-        self.other_appt = _appointment(self.session, 101, 21)
+        self.other_appt = _appointment(
+            self.session,
+            101,
+            21,
+            appointment_time=datetime(2026, 10, 10, 11, 0),
+        )
         await self.session.commit()
 
     async def asyncTearDown(self):
@@ -364,7 +377,12 @@ class ToolAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             "cancel_appointment",
             {"appointment_id": self.appt.id},
         )
-        alien = _appointment(self.session, 201, 41)
+        alien = _appointment(
+            self.session,
+            201,
+            41,
+            appointment_time=datetime(2026, 10, 10, 11, 0),
+        )
         self.session.add(alien)
         await self.session.commit()
         with self.assertRaises(AppError) as caught:

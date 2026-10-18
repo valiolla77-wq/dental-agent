@@ -3,16 +3,29 @@
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import AppError
-from app.models.appointment import Appointment
+from app.models.appointment import APPOINTMENT_SLOT_INDEX, Appointment
 from app.models.dental_service import DentalService
 from app.models.doctor import Doctor
 from app.models.doctor_dental_service import doctor_dental_services
 from app.models.doctor_schedule import DoctorSchedule
 from app.models.patient import Patient
 from app.utils.date_utils import jalali_to_gregorian
+
+
+def _is_appointment_slot_conflict(exc: IntegrityError) -> bool:
+    """Distinguish our partial unique slot index from unrelated DB errors."""
+    message = str(getattr(exc, "orig", exc))
+    if APPOINTMENT_SLOT_INDEX in message:
+        return True
+    return (
+        "UNIQUE constraint failed" in message
+        and "appointments.doctor_id" in message
+        and "appointments.appointment_time" in message
+    )
 
 
 def saturday_based_day_of_week(target_date: date) -> int:
@@ -162,11 +175,17 @@ async def create_appointment(
         reason=reason,
     )
     db.add(appointment)
-    if commit:
-        await db.commit()
-        await db.refresh(appointment)
-    else:
-        await db.flush()
+    try:
+        if commit:
+            await db.commit()
+            await db.refresh(appointment)
+        else:
+            await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        if _is_appointment_slot_conflict(exc):
+            raise AppError("APPOINTMENT_SLOT_BOOKED") from exc
+        raise
     return appointment
 
 
@@ -202,6 +221,11 @@ async def reschedule_appointment(
         appointment.appointment_time = new_datetime
         await db.flush()
         await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if _is_appointment_slot_conflict(exc):
+            raise AppError("APPOINTMENT_SLOT_BOOKED") from exc
+        raise
     except Exception:
         await db.rollback()
         raise
