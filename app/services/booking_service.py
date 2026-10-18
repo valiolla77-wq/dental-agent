@@ -1,4 +1,11 @@
-"""Booking flow orchestration across patient and appointment services."""
+"""Booking flow orchestration across patient and appointment services.
+
+Transaction ownership: mutating service functions own the session's
+transaction boundary. They commit once after all writes succeed and roll back
+on any failure, so they work whether the caller's session is fresh or already
+has a read transaction open (for example after an authorization query).
+Callers must not hold unrelated uncommitted writes when invoking this service.
+"""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +28,7 @@ async def create_booking(
     reason: str | None = None,
 ) -> Appointment:
     """Reuse or create a patient and book atomically using domain services."""
-    async with db.begin():
+    try:
         if patient_id is None:
             if not all(
                 value and value.strip()
@@ -54,6 +61,12 @@ async def create_booking(
             reason=reason,
             commit=False,
         )
+
+        # Commit the whole booking (optional new patient + appointment) once.
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
     await db.refresh(appointment)
     return appointment

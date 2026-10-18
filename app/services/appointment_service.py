@@ -176,8 +176,13 @@ async def reschedule_appointment(
     appointment_date: str,
     appointment_time: str,
 ) -> Appointment:
-    """Move a scheduled appointment atomically without creating history."""
-    async with db.begin():
+    """Move a scheduled appointment atomically without creating history.
+
+    This service owns the session's transaction boundary: it commits once on
+    success and rolls back on any failure, whether the caller's session is
+    fresh or already has a read transaction open from an authorization check.
+    """
+    try:
         appointment = await db.get(Appointment, appointment_id)
         if appointment is None:
             raise AppError("APPOINTMENT_NOT_FOUND")
@@ -196,6 +201,10 @@ async def reschedule_appointment(
         )
         appointment.appointment_time = new_datetime
         await db.flush()
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
     await db.refresh(appointment)
     return appointment
