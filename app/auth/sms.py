@@ -14,8 +14,13 @@ from app.errors import AppError
 
 
 def app_env() -> str:
-    """Deployment environment name; unset means local development."""
-    return os.getenv("APP_ENV", "development").strip().lower() or "development"
+    """Deployment environment name; only an explicit value is honored.
+
+    Fail-safe: unset or blank APP_ENV is treated as production so that
+    development-only helpers (the fake SMS provider) are never enabled by
+    accident. Local development must opt in with APP_ENV=development.
+    """
+    return os.getenv("APP_ENV", "production").strip().lower() or "production"
 
 
 def provider_name() -> str:

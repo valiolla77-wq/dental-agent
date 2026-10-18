@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import require_admin
+from app.auth.dependencies import get_current_user, require_admin
 from app.database import get_db
 from app.models.user import User
 from app.schemas.dental_service import (
@@ -9,7 +9,7 @@ from app.schemas.dental_service import (
     DentalServiceResponse,
     DentalServiceUpdate,
 )
-from app.schemas.doctor import DoctorResponse
+from app.schemas.doctor import DoctorPublicResponse
 from app.services import dental_service_service
 
 
@@ -45,13 +45,19 @@ async def list_dental_services(
     return [DentalServiceResponse.model_validate(service) for service in services]
 
 
-@router.get("/{service_id}/doctors", response_model=list[DoctorResponse])
+@router.get("/{service_id}/doctors", response_model=list[DoctorPublicResponse])
 async def get_service_doctors(
     service_id: int,
     db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
 ):
+    # Doctor phone numbers are never exposed here; only the public catalog
+    # fields (id, name, specialty, active flag) are returned to any
+    # authenticated role.
     doctors = await dental_service_service.get_service_doctors(db, service_id)
-    return [DoctorResponse.model_validate(doctor) for doctor in doctors]
+    return [
+        DoctorPublicResponse.model_validate(doctor) for doctor in doctors
+    ]
 
 
 @router.get("/{service_id}", response_model=DentalServiceResponse)

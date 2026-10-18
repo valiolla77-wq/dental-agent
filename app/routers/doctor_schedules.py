@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import require_admin
+from app.auth.dependencies import get_current_user, require_admin
 from app.database import get_db
 from app.models.user import User
 from app.schemas.doctor_schedule import (
@@ -37,7 +37,10 @@ async def create_doctor_schedule(
 async def get_doctor_schedules(
     doctor_id: int,
     db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
 ):
+    # Schedule data is operational clinic information (no doctor phone), but
+    # it is still limited to authenticated users.
     schedules = await doctor_schedule_service.list_doctor_schedules(
         db,
         doctor_id,

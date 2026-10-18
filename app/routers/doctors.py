@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import require_admin
+from app.auth.dependencies import get_current_user, require_admin
 from app.database import get_db
 from app.models.user import User
 from app.schemas.doctor import (
@@ -62,5 +62,8 @@ async def update_doctor(
 async def get_doctor_services(
     doctor_id: int,
     db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
 ):
+    # Service catalog for one doctor: no doctor PII in the response, but the
+    # endpoint is limited to authenticated users like the rest of the catalog.
     return await dental_service_service.get_doctor_services(db, doctor_id)

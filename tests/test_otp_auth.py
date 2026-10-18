@@ -251,5 +251,61 @@ class OtpAuthTests(unittest.TestCase):
         self.assertIn(body["dev_otp"], record)
 
 
+class FakeProviderEnvGateTests(unittest.TestCase):
+    """P0-2: fake SMS requires an explicit development/test APP_ENV.
+
+    The fail-safe default is production: unset, blank, or unknown APP_ENV
+    values never enable the fake provider, so ``dev_otp`` can never leak in
+    a misconfigured deployment.
+    """
+
+    def _sms(self):
+        from app.auth import sms as sms_module
+
+        return sms_module
+
+    def _assert_disabled(self):
+        sms_module = self._sms()
+        self.assertFalse(sms_module.fake_provider_allowed())
+        with self.assertRaises(AppError) as caught:
+            sms_module.get_sms_provider()
+        self.assertEqual(caught.exception.code, "COMMON_SERVICE_UNAVAILABLE")
+
+    def test_unset_app_env_is_treated_as_production(self):
+        with patch.dict(os.environ, {"OTP_PROVIDER": "fake"}):
+            os.environ.pop("APP_ENV", None)
+            self.assertEqual(self._sms().app_env(), "production")
+            self._assert_disabled()
+
+    def test_blank_app_env_is_treated_as_production(self):
+        with patch.dict(os.environ, {"APP_ENV": "   ", "OTP_PROVIDER": "fake"}):
+            self.assertEqual(self._sms().app_env(), "production")
+            self._assert_disabled()
+
+    def test_unknown_app_env_disables_fake_provider(self):
+        with patch.dict(os.environ, {"APP_ENV": "staging", "OTP_PROVIDER": "fake"}):
+            self.assertEqual(self._sms().app_env(), "staging")
+            self._assert_disabled()
+
+    def test_explicit_production_disables_fake_provider(self):
+        with patch.dict(os.environ, {"APP_ENV": "production", "OTP_PROVIDER": "fake"}):
+            self._assert_disabled()
+
+    def test_explicit_development_enables_fake_provider(self):
+        with patch.dict(os.environ, {"APP_ENV": "Development", "OTP_PROVIDER": "fake"}):
+            sms_module = self._sms()
+            self.assertTrue(sms_module.fake_provider_allowed())
+            self.assertIs(sms_module.get_sms_provider(), sms_module.fake_sms)
+
+    def test_explicit_test_enables_fake_provider(self):
+        with patch.dict(os.environ, {"APP_ENV": "test", "OTP_PROVIDER": "fake"}):
+            sms_module = self._sms()
+            self.assertTrue(sms_module.fake_provider_allowed())
+
+    def test_unknown_provider_fails_even_in_development(self):
+        with patch.dict(os.environ, {"APP_ENV": "development", "OTP_PROVIDER": "acme-sms"}):
+            self._assert_disabled()
+
+
 if __name__ == "__main__":
     unittest.main()
