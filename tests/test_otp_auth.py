@@ -82,6 +82,83 @@ class OtpAuthTests(unittest.TestCase):
             "/auth/otp/verify", json={"phone": phone, "code": code}
         )
 
+    def _latest_otp_row(self, phone=None):
+        """Return (expires_at, consumed_at) for the newest OTP row."""
+        phone = phone or self.phone
+
+        async def _fetch(db):
+            from sqlalchemy import select
+
+            from app.models.otp import OtpCode
+
+            result = await db.execute(
+                select(OtpCode)
+                .where(OtpCode.phone == phone)
+                .order_by(OtpCode.created_at.desc())
+                .limit(1)
+            )
+            record = result.scalar_one_or_none()
+            if record is None:
+                return None
+            return record.expires_at, record.consumed_at
+
+        return _run_db(_fetch)
+
+    def test_expired_code_is_rejected_and_consumed_without_token(self):
+        """An expired code yields 401, no JWT, and its row is consumed."""
+        body = self._request_code()
+        row = self._latest_otp_row()
+        self.assertIsNotNone(row)
+        expires_at, consumed_at = row
+        self.assertIsNone(consumed_at)
+
+        future = expires_at + timedelta(seconds=1)
+        with patch.object(otp_service, "_utcnow", return_value=future):
+            verify = self._verify_code(self.phone, body["dev_otp"])
+
+        self.assertEqual(verify.status_code, 401)
+        self.assertEqual(verify.json()["error"]["code"], "COMMON_UNAUTHORIZED")
+        self.assertNotIn("access_token", verify.json())
+
+        # The expired record is marked consumed and can never be replayed.
+        row = self._latest_otp_row()
+        self.assertIsNotNone(row)
+        self.assertIsNotNone(row[1])
+        with patch.object(otp_service, "_utcnow", return_value=future):
+            replay = self._verify_code(self.phone, body["dev_otp"])
+        self.assertEqual(replay.status_code, 401)
+
+    def test_code_before_expiry_is_accepted(self):
+        """One second before expiry the code still logs the patient in."""
+        body = self._request_code()
+        row = self._latest_otp_row()
+        self.assertIsNotNone(row)
+        before_expiry = row[0] - timedelta(seconds=1)
+
+        with patch.object(otp_service, "_utcnow", return_value=before_expiry):
+            verify = self._verify_code(self.phone, body["dev_otp"])
+
+        self.assertEqual(verify.status_code, 200)
+        self.assertIn("access_token", verify.json())
+
+    def test_code_at_exact_expiry_is_rejected_and_consumed(self):
+        """At exactly ``expires_at`` the code is expired, single-use, no JWT."""
+        body = self._request_code()
+        row = self._latest_otp_row()
+        self.assertIsNotNone(row)
+        expires_at = row[0]
+
+        with patch.object(otp_service, "_utcnow", return_value=expires_at):
+            verify = self._verify_code(self.phone, body["dev_otp"])
+
+        self.assertEqual(verify.status_code, 401)
+        self.assertEqual(verify.json()["error"]["code"], "COMMON_UNAUTHORIZED")
+        self.assertNotIn("access_token", verify.json())
+
+        row = self._latest_otp_row()
+        self.assertIsNotNone(row)
+        self.assertIsNotNone(row[1])
+
     def test_successful_otp_login_issues_jwt(self):
         body = self._request_code()
         self.assertEqual(body["status"], "accepted")

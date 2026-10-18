@@ -1,6 +1,12 @@
 import json
+import os
 import unittest
 from datetime import datetime
+
+os.environ.setdefault(
+    "CONFIRMATION_HMAC_SECRET",
+    "test-confirmation-hmac-secret-32-chars-long",
+)
 
 from langchain_core.messages import AIMessage, ToolMessage
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -82,6 +88,7 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
                 "llm": model or FakeChatModel(AIMessage(content="پاسخ آزمایشی")),
                 # Trusted server-side actor for tool authorization checks.
                 "actor": User(
+                    id=1,
                     full_name="Graph Probe",
                     phone="09900000111",
                     password_hash="unused-hash",

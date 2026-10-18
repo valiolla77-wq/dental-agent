@@ -208,7 +208,13 @@ async def _agent_decision_node(
             token = state.get("confirmation_token")
             if isinstance(decision, dict) and decision.get("token"):
                 token = decision.get("token")
-            confirmation_store.consume(token, session_id=session_id, user_id=user_id)
+            await confirmation_store.consume(
+                runtime.context["db"],
+                token,
+                session_id=session_id,
+                user_id=user_id,
+                decision="rejected",
+            )
             return _finish_rejected_confirmation(state)
 
         if not (isinstance(decision, dict) and decision.get("decision") == "approved"):
@@ -218,8 +224,12 @@ async def _agent_decision_node(
                 "route": "confirmation",
             }
 
-        record = confirmation_store.consume(
-            decision.get("token"), session_id=session_id, user_id=user_id
+        record = await confirmation_store.consume(
+            runtime.context["db"],
+            decision.get("token"),
+            session_id=session_id,
+            user_id=user_id,
+            decision="approved",
         )
         if (
             record is None
@@ -405,7 +415,7 @@ async def _agent_decision_node(
     }
 
 
-def _confirmation_node(
+async def _confirmation_node(
     state: AgentState,
     runtime: Runtime[AgentContext],
 ) -> dict[str, Any]:
@@ -416,7 +426,8 @@ def _confirmation_node(
     if isinstance(action, dict):
         definition = TOOL_REGISTRY.get(action.get("tool_name") or "")
         if definition is not None and definition.operation == "write":
-            record = confirmation_store.issue(
+            record = await confirmation_store.issue(
+                runtime.context["db"],
                 session_id=runtime.context.get("session_id"),
                 user_id=user_id,
                 tool_name=action.get("tool_name") or "",

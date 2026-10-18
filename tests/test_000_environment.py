@@ -13,6 +13,10 @@ import unittest
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("JWT_SECRET", "test-secret-key-for-testing-only-32-chars-long")
 os.environ.setdefault("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+os.environ.setdefault(
+    "CONFIRMATION_HMAC_SECRET",
+    "test-confirmation-hmac-secret-32-chars-long",
+)
 
 
 class TestEnvironmentInitialization(unittest.TestCase):

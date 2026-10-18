@@ -170,7 +170,7 @@ async def verify_otp(db: AsyncSession, phone: str, code: str, ip: str) -> str:
     if record is None:
         await _unauthorized()
     assert record is not None
-    if now > record.expires_at:
+    if now >= record.expires_at:
         record.consumed_at = now
         await db.commit()
         await _unauthorized()

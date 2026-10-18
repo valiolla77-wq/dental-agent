@@ -174,6 +174,12 @@ ERROR_CATALOG: dict[str, ErrorDefinition] = {
         "ERROR", False,
         "HANDOFF_TO_HUMAN", "ERROR", "LOW",
     ),
+    "AGENT_CONFIRMATION_INVALID": ErrorDefinition(
+        "AGENT_CONFIRMATION_INVALID", 409,
+        "این تأیید معتبر، منقضی یا متعلق به این نشست نیست؛ لطفاً عملیات را دوباره ثبت کنید.",
+        "WARNING", False,
+        "ASK_USER_TO_RESTART_ACTION", "WARNING", "HIGH",
+    ),
 }
 
 
