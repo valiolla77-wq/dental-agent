@@ -108,6 +108,23 @@ async def agent_chat(
         state["pending_action"] = pending_action
         state["pending_tool_calls"] = [dict(pending_action)]
         state["confirmation_status"] = "pending"
+        # Rebuild the assistant tool-call message from the persisted record.
+        # The tool result appended after execution must have a matching
+        # preceding tool_call for OpenAI-compatible chat APIs.
+        state["messages"].append(
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "name": record.tool_name,
+                        "args": dict(record.arguments),
+                        "id": record.tool_call_id,
+                        "type": "tool_call",
+                    }
+                ],
+            }
+        )
 
     context: dict = {
         "db": db,

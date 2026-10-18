@@ -106,9 +106,36 @@ class OpenRouterProvider:
         )
 
 
+class OpenAICompatibleProvider:
+    """OpenAI-compatible endpoint using the project's validated factory."""
+
+    def create(self, config: LLMConfig) -> ToolCallingChatModel:
+        if not config.api_key:
+            raise ValueError(
+                "AGENT_LLM_API_KEY is required when AGENT_LLM_PROVIDER=openai."
+            )
+
+        # Import lazily: provider_factory imports ToolCallingChatModel from
+        # this module, so a top-level import would create a cycle.
+        from app.agent.provider_factory import create_provider_model
+        from app.config import ProviderSettings
+
+        settings = ProviderSettings(
+            protocol="openai",
+            base_url=config.base_url,
+            model=config.model,
+            api_key=config.api_key,
+            temperature=config.temperature,
+            timeout=60.0,
+            max_retries=0,
+        )
+        return create_provider_model(settings)
+
+
 PROVIDERS: dict[str, LLMProvider] = {
     "ollama": OllamaProvider(),
     "openrouter": OpenRouterProvider(),
+    "openai": OpenAICompatibleProvider(),
 }
 
 

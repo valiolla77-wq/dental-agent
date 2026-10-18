@@ -139,6 +139,49 @@ def _catalog_error(code: str) -> AgentToolError:
     return AgentToolError(code=definition.code, message=definition.message, details={})
 
 
+def _successful_write_fallback(state: AgentState) -> str | None:
+    """Describe a committed write when only the final LLM phrasing failed.
+
+    The fallback is derived exclusively from the successful tool result. It
+    never runs the tool again and returns None for failed or non-write tools,
+    so an error cannot be reported as a success.
+    """
+    name = state.get("last_tool_name")
+    result = state.get("last_tool_result")
+    if name not in {
+        "book_appointment",
+        "cancel_appointment",
+        "reschedule_appointment",
+    }:
+        return None
+    if not isinstance(result, dict) or not result.get("ok"):
+        return None
+    data = result.get("data")
+    if not isinstance(data, dict):
+        return None
+
+    appointment_id = data.get("appointment_id")
+    if name == "book_appointment":
+        if appointment_id is None:
+            return "نوبت با موفقیت ثبت شد."
+        appointment_time = data.get("appointment_time")
+        if appointment_time:
+            return f"نوبت {appointment_id} برای {appointment_time} ثبت شد."
+        return f"نوبت {appointment_id} با موفقیت ثبت شد."
+
+    if name == "cancel_appointment":
+        if appointment_id is None:
+            return "نوبت با موفقیت لغو شد."
+        return f"نوبت {appointment_id} لغو شد."
+
+    appointment_time = data.get("appointment_time")
+    if appointment_id is None:
+        return "نوبت با موفقیت جابه‌جا شد."
+    if appointment_time:
+        return f"نوبت {appointment_id} به {appointment_time} منتقل شد."
+    return f"نوبت {appointment_id} با موفقیت جابه‌جا شد."
+
+
 def _tool_message(
     *,
     call_id: str,
@@ -363,6 +406,15 @@ async def _agent_decision_node(
             "Agent LLM request failed (%s); exception details omitted",
             type(exc).__name__,
         )
+        fallback = _successful_write_fallback(state)
+        if fallback is not None:
+            return {
+                "last_tool_result": state.get("last_tool_result"),
+                "last_tool_error": state.get("last_tool_error"),
+                "final_response": fallback,
+                "route": "finish",
+                "messages": _append_message(state, "assistant", fallback),
+            }
         error = _catalog_error("INTERNAL_ERROR")
         result = {"ok": False, "data": None, "error": error.model_dump(mode="json")}
         final_response = error.message
@@ -503,6 +555,7 @@ async def _tool_execution_node(
         "messages": messages,
         "last_tool_result": result,
         "last_tool_error": error,
+        "last_tool_name": name or "unknown",
         "selected_tool": None,
         "selected_tool_arguments": {},
         "selected_tool_call_id": None,

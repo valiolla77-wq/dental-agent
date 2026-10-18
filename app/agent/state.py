@@ -43,6 +43,7 @@ class AgentState(TypedDict, total=False):
     pending_tool_calls: list[PendingToolCall]
     last_tool_result: dict[str, Any] | None
     last_tool_error: AgentToolError | None
+    last_tool_name: str | None
     confirmation_required: bool
     confirmation_status: Literal["not_required", "pending", "approved", "rejected"]
     confirmation_token: str | None
@@ -83,6 +84,7 @@ def create_initial_state(
         pending_tool_calls=[],
         last_tool_result=None,
         last_tool_error=None,
+        last_tool_name=None,
         confirmation_required=False,
         confirmation_status="not_required",
         confirmation_token=None,

@@ -212,7 +212,7 @@ class ProviderFactoryTests(unittest.TestCase):
         self.assertIn("input_schema", anthropic_bound.kwargs["tools"][0])
 
     def test_existing_ollama_and_openrouter_providers_are_unchanged(self):
-        self.assertEqual(set(PROVIDERS), {"ollama", "openrouter"})
+        self.assertEqual(set(PROVIDERS), {"ollama", "openrouter", "openai"})
 
 
 if __name__ == "__main__":

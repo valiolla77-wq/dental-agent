@@ -97,6 +97,17 @@ class ToolAwareFakeModel:
         )
 
 
+class FailingFinalModel(ToolAwareFakeModel):
+    """Completes the proposal, then fails when asked to phrase the result."""
+
+    async def ainvoke(self, messages):
+        self.calls += 1
+        self.received.append(list(messages))
+        if self.responses:
+            return self.responses.pop(0)
+        raise RuntimeError("simulated final LLM failure")
+
+
 class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -268,6 +279,26 @@ class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(model.calls, 3)
 
+        final_messages = model.received[-1]
+        assistant_index = next(
+            index
+            for index, message in enumerate(final_messages)
+            if isinstance(message, AIMessage) and message.tool_calls
+        )
+        tool_index = next(
+            index
+            for index, message in enumerate(final_messages)
+            if isinstance(message, ToolMessage)
+        )
+        self.assertLess(assistant_index, tool_index)
+        tool_call = final_messages[assistant_index].tool_calls[0]
+        self.assertEqual(tool_call["name"], "book_appointment")
+        self.assertEqual(
+            tool_call["id"], final_messages[tool_index].tool_call_id
+        )
+        self.assertEqual(tool_call["args"]["doctor_id"], self.doctor_id)
+        self.assertEqual(tool_call["args"]["service_id"], self.service_id)
+
     async def test_slot_occupied_before_approval_prevents_booking(self):
         model = self._booking_model()
         proposed = self._propose_booking(model, "booking-race")
@@ -328,6 +359,55 @@ class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(final["confirmation_required"])
         self.assertIn("APPOINTMENT_SERVICE_INACTIVE", final["reply"])
         self.assertNotIn("ثبت شد", final["reply"])
+        self.assertEqual(await self._appointments_at_slot(), [])
+
+    async def test_final_llm_failure_after_booking_returns_safe_success(self):
+        model = FailingFinalModel(
+            *self._booking_model().responses
+        )
+        proposed = self._propose_booking(model, "booking-llm-fail")
+        self.assertEqual(proposed.status_code, 200, proposed.text)
+        token = proposed.json()["confirmation_token"]
+        self.assertEqual(await self._appointments_at_slot(), [])
+
+        approved = self._post(
+            message="تأیید می‌کنم",
+            session_id="booking-llm-fail",
+            confirmation={"token": token, "decision": "approved"},
+        )
+        self.assertEqual(approved.status_code, 200, approved.text)
+        final = approved.json()
+        self.assertFalse(final["confirmation_required"])
+
+        appointments = await self._appointments_at_slot()
+        self.assertEqual(len(appointments), 1)
+        appointment = appointments[0]
+        self.assertIn(f"نوبت {appointment.id}", final["reply"])
+        self.assertIn("ثبت شد", final["reply"])
+        self.assertNotIn("خطای داخلی", final["reply"])
+        self.assertEqual(model.calls, 3)
+
+    async def test_llm_failure_after_tool_failure_claims_no_success(self):
+        model = FailingFinalModel(
+            *self._booking_model().responses
+        )
+        proposed = self._propose_booking(model, "booking-tool-llm-fail")
+        self.assertEqual(proposed.status_code, 200, proposed.text)
+        token = proposed.json()["confirmation_token"]
+
+        service = await self.session.get(DentalService, self.service_id)
+        service.is_active = False
+        await self.session.commit()
+
+        approved = self._post(
+            message="تأیید می‌کنم",
+            session_id="booking-tool-llm-fail",
+            confirmation={"token": token, "decision": "approved"},
+        )
+        self.assertEqual(approved.status_code, 200, approved.text)
+        final = approved.json()
+        self.assertNotIn("ثبت شد", final["reply"])
+        self.assertNotIn("لغو شد", final["reply"])
         self.assertEqual(await self._appointments_at_slot(), [])
 
 
