@@ -212,7 +212,8 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
     async def test_read_and_write_tools_are_classified_in_registry(self):
         reads = {
             "search_dental_services", "find_doctors_for_service",
-            "find_available_slots", "get_patient_appointments",
+            "find_available_slots", "find_nearest_appointments",
+            "get_patient_appointments",
         }
         writes = {"book_appointment", "cancel_appointment", "reschedule_appointment"}
         self.assertTrue(all(TOOL_REGISTRY[name].operation == "read" for name in reads))

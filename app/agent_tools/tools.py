@@ -21,7 +21,10 @@ from app.agent_tools.schemas import (
     DoctorToolItem,
     FindAvailableSlotsInput,
     FindDoctorsForServiceInput,
+    FindNearestAppointmentsInput,
     GetPatientAppointmentsInput,
+    NearestAppointmentToolItem,
+    NearestAppointmentsToolData,
     PatientAppointmentToolItem,
     RescheduleAppointmentInput,
     RescheduleAppointmentToolData,
@@ -199,6 +202,40 @@ async def find_available_slots(
         )
 
     return await _execute_tool("find_available_slots", operation)
+
+
+async def find_nearest_appointments(
+    db: AsyncSession,
+    *,
+    service_id: int | None = None,
+    doctor_id: int | None = None,
+    days: int = 30,
+    limit: int = 3,
+) -> AgentToolResult[NearestAppointmentsToolData]:
+    """Return the earliest free slots across a forward range, no date needed."""
+
+    async def operation() -> NearestAppointmentsToolData:
+        request = FindNearestAppointmentsInput(
+            service_id=service_id,
+            doctor_id=doctor_id,
+            days=days,
+            limit=limit,
+        )
+        slots = await appointment_service.find_nearest_available_slots(
+            db,
+            service_id=request.service_id,
+            doctor_id=request.doctor_id,
+            days=request.days,
+            limit=request.limit,
+        )
+        return NearestAppointmentsToolData(
+            search_days=request.days,
+            appointments=[
+                NearestAppointmentToolItem(**slot) for slot in slots
+            ],
+        )
+
+    return await _execute_tool("find_nearest_appointments", operation)
 
 
 async def get_patient_appointments(

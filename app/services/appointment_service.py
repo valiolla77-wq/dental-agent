@@ -1,6 +1,8 @@
 """Appointment domain operations and persistence."""
 
+from collections import defaultdict
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -13,7 +15,9 @@ from app.models.doctor import Doctor
 from app.models.doctor_dental_service import doctor_dental_services
 from app.models.doctor_schedule import DoctorSchedule
 from app.models.patient import Patient
-from app.utils.date_utils import jalali_to_gregorian
+from app.utils.date_utils import gregorian_to_jalali, jalali_to_gregorian
+
+CLINIC_TIMEZONE = ZoneInfo("Asia/Tehran")
 
 
 def _is_appointment_slot_conflict(exc: IntegrityError) -> bool:
@@ -319,3 +323,158 @@ async def get_available_slots(
         for slot in build_schedule_slots(target_date, schedules)
         if slot not in booked_times
     ]
+
+
+def clinic_now(now: datetime | None = None) -> datetime:
+    """Return a naive Asia/Tehran wall-clock time for slot comparisons."""
+    if now is None:
+        current = datetime.now(CLINIC_TIMEZONE)
+    elif now.tzinfo is None:
+        current = now.replace(tzinfo=CLINIC_TIMEZONE)
+    else:
+        current = now.astimezone(CLINIC_TIMEZONE)
+    return current.replace(tzinfo=None)
+
+
+async def find_nearest_available_slots(
+    db: AsyncSession,
+    *,
+    service_id: int | None = None,
+    doctor_id: int | None = None,
+    days: int = 30,
+    limit: int = 3,
+    now: datetime | None = None,
+) -> list[dict[str, object]]:
+    """Find the earliest real free slots across a forward date range.
+
+    Appointments use the doctor's fixed, non-overlapping schedule slots.
+    Past slots and ``scheduled`` appointments are excluded. If the service or
+    doctor is omitted, all active eligible pairs are searched. Results are
+    sorted by time and capped at ``limit``.
+    """
+    days = max(1, min(int(days), 60))
+    limit = max(1, min(int(limit), 10))
+    current = clinic_now(now)
+    start_date = current.date()
+    range_end = datetime.combine(
+        start_date + timedelta(days=days), datetime.min.time()
+    )
+
+    services: dict[int, DentalService] = {}
+    if service_id is not None:
+        service = await db.get(DentalService, service_id)
+        if service is None:
+            raise AppError("DENTAL_SERVICE_NOT_FOUND")
+        if not service.is_active:
+            raise AppError("APPOINTMENT_SERVICE_INACTIVE")
+        services[service.id] = service
+    else:
+        result = await db.execute(
+            select(DentalService).where(DentalService.is_active.is_(True))
+        )
+        services = {item.id: item for item in result.scalars().all()}
+    if not services:
+        return []
+
+    doctors: dict[int, Doctor] = {}
+    if doctor_id is not None:
+        doctor = await db.get(Doctor, doctor_id)
+        if doctor is None:
+            raise AppError("DOCTOR_NOT_FOUND")
+        if not doctor.is_active:
+            raise AppError("DOCTOR_INACTIVE")
+        doctors[doctor.id] = doctor
+    else:
+        result = await db.execute(
+            select(Doctor).where(Doctor.is_active.is_(True))
+        )
+        doctors = {item.id: item for item in result.scalars().all()}
+    if not doctors:
+        return []
+
+    links = (
+        await db.execute(
+            select(
+                doctor_dental_services.c.doctor_id,
+                doctor_dental_services.c.dental_service_id,
+            ).where(
+                doctor_dental_services.c.doctor_id.in_(doctors),
+                doctor_dental_services.c.dental_service_id.in_(services),
+            )
+        )
+    ).all()
+    pairs = sorted(
+        (row.doctor_id, row.dental_service_id) for row in links
+    )
+    if not pairs:
+        if service_id is not None and doctor_id is not None:
+            raise AppError("APPOINTMENT_DOCTOR_SERVICE_MISMATCH")
+        return []
+
+    schedules_by_doctor_day: dict[tuple[int, int], list[DoctorSchedule]] = (
+        defaultdict(list)
+    )
+    schedule_rows = (
+        await db.execute(
+            select(DoctorSchedule).where(
+                DoctorSchedule.doctor_id.in_(doctors),
+                DoctorSchedule.is_active.is_(True),
+            )
+        )
+    ).scalars().all()
+    for schedule in schedule_rows:
+        schedules_by_doctor_day[
+            (schedule.doctor_id, schedule.day_of_week)
+        ].append(schedule)
+
+    booked_rows = (
+        await db.execute(
+            select(Appointment.doctor_id, Appointment.appointment_time).where(
+                Appointment.doctor_id.in_(doctors),
+                Appointment.appointment_time
+                >= datetime.combine(start_date, datetime.min.time()),
+                Appointment.appointment_time < range_end,
+                Appointment.status == "scheduled",
+            )
+        )
+    ).all()
+    booked = {(row.doctor_id, row.appointment_time) for row in booked_rows}
+
+    candidates: list[tuple[datetime, int, int]] = []
+    seen_doctor_slots: set[tuple[int, datetime]] = set()
+    for pair_doctor_id, pair_service_id in pairs:
+        for offset in range(days):
+            target_date = start_date + timedelta(days=offset)
+            day_of_week = saturday_based_day_of_week(target_date)
+            schedules = schedules_by_doctor_day.get(
+                (pair_doctor_id, day_of_week), []
+            )
+            if not schedules:
+                continue
+            for slot in build_schedule_slots(target_date, schedules):
+                if slot <= current:
+                    continue
+                if (pair_doctor_id, slot) in booked:
+                    continue
+                # One doctor/time option is enough; do not show the same
+                # start time once per service the doctor offers.
+                if (pair_doctor_id, slot) in seen_doctor_slots:
+                    continue
+                seen_doctor_slots.add((pair_doctor_id, slot))
+                candidates.append((slot, pair_doctor_id, pair_service_id))
+
+    candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+    results: list[dict[str, object]] = []
+    for slot, pair_doctor_id, pair_service_id in candidates[:limit]:
+        appointment_date, appointment_time = gregorian_to_jalali(slot)
+        results.append(
+            {
+                "doctor_id": pair_doctor_id,
+                "doctor_name": doctors[pair_doctor_id].full_name,
+                "service_id": pair_service_id,
+                "service_name": services[pair_service_id].name,
+                "appointment_date": appointment_date,
+                "appointment_time": appointment_time,
+            }
+        )
+    return results

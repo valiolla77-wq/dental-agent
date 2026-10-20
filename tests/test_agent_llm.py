@@ -144,9 +144,10 @@ class AgentLLMTests(unittest.TestCase):
     def test_registry_exports_only_named_tool_schemas(self):
         schemas = get_llm_tool_schemas()
         names = [schema["function"]["name"] for schema in schemas]
-        self.assertEqual(len(names), 7)
+        self.assertEqual(len(names), 8)
         self.assertIn("book_appointment", names)
         self.assertIn("search_dental_services", names)
+        self.assertIn("find_nearest_appointments", names)
         self.assertTrue(all(schema["type"] == "function" for schema in schemas))
 
     def test_openai_configuration_uses_generic_api_key(self):
@@ -249,6 +250,9 @@ class AgentLLMTests(unittest.TestCase):
             "Errorهای Tool",
             "book_appointment",
             "خودت به‌صورت متنی",
+            "find_nearest_appointments",
+            "پوسیدگی",
+            "فرقی نمی‌کند",
         ):
             self.assertIn(rule, SYSTEM_PROMPT)
 

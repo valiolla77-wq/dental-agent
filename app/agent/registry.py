@@ -11,6 +11,7 @@ from app.agent_tools.schemas import (
     CancelAppointmentInput,
     FindAvailableSlotsInput,
     FindDoctorsForServiceInput,
+    FindNearestAppointmentsInput,
     GetPatientAppointmentsInput,
     RescheduleAppointmentInput,
     SearchDentalServicesInput,
@@ -34,7 +35,7 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
     "search_dental_services": ToolDefinition(
         "search_dental_services",
         "read",
-        "جستجوی خدمات فعال دندانپزشکی بر اساس نام.",
+        "جستجوی خدمات فعال دندانپزشکی بر اساس نام یا توضیحات.",
         SearchDentalServicesInput,
         tools.search_dental_services,
     ),
@@ -51,6 +52,13 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         "دریافت زمان‌های واقعاً آزاد پزشک برای تاریخ مشخص.",
         FindAvailableSlotsInput,
         tools.find_available_slots,
+    ),
+    "find_nearest_appointments": ToolDefinition(
+        "find_nearest_appointments",
+        "read",
+        "یافتن نزدیک‌ترین نوبت‌های آزاد در ۳۰ روز آینده؛ تاریخ لازم نیست.",
+        FindNearestAppointmentsInput,
+        tools.find_nearest_appointments,
     ),
     "get_patient_appointments": ToolDefinition(
         "get_patient_appointments",

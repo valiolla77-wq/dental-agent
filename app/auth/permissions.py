@@ -194,6 +194,7 @@ _TOOL_ACTIONS: dict[str, str] = {
     "search_dental_services": "clinic:read",
     "find_doctors_for_service": "clinic:read",
     "find_available_slots": "clinic:read",
+    "find_nearest_appointments": "clinic:read",
     "get_patient_appointments": "appointment:read",
     "book_appointment": "appointment:create",
     "cancel_appointment": "appointment:cancel",

@@ -1,6 +1,6 @@
 """Dental service domain operations and persistence."""
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import AppError
@@ -39,11 +39,21 @@ async def search_dental_services(
     db: AsyncSession,
     name_query: str | None = None,
 ) -> list[DentalService]:
-    """Return active bookable services, optionally matching part of the name."""
+    """Return active bookable services matching a name or description.
+
+    A description match lets the agent map a patient's wording (for example
+    "پوسیدگی") to an existing service without inventing a service name.
+    """
     query = select(DentalService).where(DentalService.is_active.is_(True))
     normalized_query = name_query.strip() if name_query else ""
     if normalized_query:
-        query = query.where(DentalService.name.ilike(f"%{normalized_query}%"))
+        pattern = f"%{normalized_query}%"
+        query = query.where(
+            or_(
+                DentalService.name.ilike(pattern),
+                DentalService.description.ilike(pattern),
+            )
+        )
     result = await db.execute(query.order_by(DentalService.id))
     return list(result.scalars().all())
 

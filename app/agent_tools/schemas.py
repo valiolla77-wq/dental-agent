@@ -35,6 +35,15 @@ class FindAvailableSlotsInput(BaseModel):
         return normalized
 
 
+class FindNearestAppointmentsInput(BaseModel):
+    """Optional filters for an automatic 30-day forward search."""
+
+    service_id: int | None = Field(default=None, gt=0)
+    doctor_id: int | None = Field(default=None, gt=0)
+    days: int = Field(default=30, ge=1, le=60)
+    limit: int = Field(default=3, ge=1, le=10)
+
+
 class GetPatientAppointmentsInput(BaseModel):
     patient_id: int = Field(gt=0)
 
@@ -122,6 +131,20 @@ class AvailableSlotsToolData(BaseModel):
     doctor_id: int
     appointment_date: str
     available_slots: list[str]
+
+
+class NearestAppointmentToolItem(BaseModel):
+    doctor_id: int
+    doctor_name: str
+    service_id: int
+    service_name: str
+    appointment_date: str
+    appointment_time: str
+
+
+class NearestAppointmentsToolData(BaseModel):
+    search_days: int
+    appointments: list[NearestAppointmentToolItem]
 
 
 class PatientAppointmentToolItem(BaseModel):

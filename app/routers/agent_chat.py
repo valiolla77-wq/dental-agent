@@ -36,6 +36,11 @@ class ChatConfirmation(BaseModel):
     decision: Literal["approved", "rejected"]
 
 
+class ChatHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     session_id: str | None = Field(
@@ -44,6 +49,7 @@ class ChatRequest(BaseModel):
         max_length=120,
         pattern=r"^[A-Za-z0-9_-]+$",
     )
+    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=20)
     confirmation: ChatConfirmation | None = None
 
 
@@ -86,8 +92,15 @@ async def agent_chat(
         raise AppError("AGENT_CONFIRMATION_INVALID")
 
     session_id = payload.session_id or uuid4().hex
+    history = [
+        {"role": item.role, "content": item.content}
+        for item in payload.history
+    ]
     state = create_initial_state(
-        messages=[{"role": "user", "content": payload.message}]
+        messages=[
+            *history,
+            {"role": "user", "content": payload.message},
+        ]
     )
 
     if payload.confirmation is not None:

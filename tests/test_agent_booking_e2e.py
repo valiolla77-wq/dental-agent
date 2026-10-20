@@ -24,7 +24,11 @@ os.environ["CONFIRMATION_HMAC_SECRET"] = (
 os.environ["CONFIRMATION_TTL_SECONDS"] = "300"
 
 from fastapi.testclient import TestClient  # noqa: E402
-from langchain_core.messages import AIMessage, ToolMessage  # noqa: E402
+from langchain_core.messages import (  # noqa: E402
+    AIMessage,
+    HumanMessage,
+    ToolMessage,
+)
 from sqlalchemy import select  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     async_sessionmaker,
@@ -108,6 +112,52 @@ class FailingFinalModel(ToolAwareFakeModel):
         raise RuntimeError("simulated final LLM failure")
 
 
+class HistoryAwareNearestModel:
+    """Mock that follows a prior read-search suggestion when the user says yes."""
+
+    def __init__(self, service_id):
+        self.service_id = service_id
+        self.calls = 0
+        self.tool_calls = []
+
+    def bind_tools(self, _tool_schemas):
+        return self
+
+    async def ainvoke(self, messages):
+        self.calls += 1
+        last = messages[-1]
+        if isinstance(last, ToolMessage):
+            payload = json.loads(last.content)
+            appointment = payload["data"]["appointments"][0]
+            return AIMessage(
+                content=(
+                    "نزدیک‌ترین نوبت "
+                    f"{appointment['appointment_date']} ساعت "
+                    f"{appointment['appointment_time']} است."
+                )
+            )
+
+        asked_for_search = any(
+            isinstance(message, AIMessage)
+            and "جست‌وجو" in str(message.content)
+            for message in messages
+        )
+        if (
+            isinstance(last, HumanMessage)
+            and str(last.content).strip() == "بله"
+            and asked_for_search
+        ):
+            call = {
+                "name": "find_nearest_appointments",
+                "args": {"service_id": self.service_id, "limit": 3},
+                "id": "call-nearest-1",
+                "type": "tool_call",
+            }
+            self.tool_calls.append(call)
+            return AIMessage(content="", tool_calls=[call])
+        return AIMessage(content="متوجه نشدم.")
+
+
 class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -180,10 +230,12 @@ class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
     def _install_llm(self, model):
         app.dependency_overrides[get_chat_llm] = lambda: model
 
-    def _post(self, *, message, session_id, confirmation=None):
+    def _post(self, *, message, session_id, confirmation=None, history=None):
         body = {"message": message, "session_id": session_id}
         if confirmation is not None:
             body["confirmation"] = confirmation
+        if history is not None:
+            body["history"] = history
         return self.client.post(
             "/agent/chat",
             json=body,
@@ -298,6 +350,35 @@ class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(tool_call["args"]["doctor_id"], self.doctor_id)
         self.assertEqual(tool_call["args"]["service_id"], self.service_id)
+
+    async def test_yes_follows_prior_nearest_search_suggestion(self):
+        model = HistoryAwareNearestModel(self.service_id)
+        self._install_llm(model)
+        response = self._post(
+            message="بله",
+            session_id="history-yes",
+            history=[
+                {
+                    "role": "user",
+                    "content": "دندونم جرم گرفته، چه خدمتی دارید؟",
+                },
+                {
+                    "role": "assistant",
+                    "content": "می‌خواهی نزدیک‌ترین نوبت جرم‌گیری را جست‌وجو کنم؟",
+                },
+            ],
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertFalse(payload["confirmation_required"])
+        self.assertIn("نزدیک‌ترین نوبت", payload["reply"])
+        self.assertEqual(len(model.tool_calls), 1)
+        self.assertEqual(
+            model.tool_calls[0]["name"], "find_nearest_appointments"
+        )
+        self.assertEqual(model.calls, 2)
+        self.assertEqual(await self._appointments_at_slot(), [])
 
     async def test_slot_occupied_before_approval_prevents_booking(self):
         model = self._booking_model()
