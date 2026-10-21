@@ -148,6 +148,27 @@ class LinkAndIdorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()), 1)
 
+    async def test_unlinked_patient_cannot_reschedule_another_appointment(self):
+        response = self._post(
+            "/appointments/700/reschedule",
+            self.token_b,
+            {
+                "appointment_date": "1405/08/15",
+                "appointment_time": "09:00",
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json()["error"]["code"], "COMMON_FORBIDDEN"
+        )
+
+    async def test_patient_cannot_cancel_another_appointment(self):
+        response = self._post("/appointments/700/cancel", self.token_b, {})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json()["error"]["code"], "COMMON_FORBIDDEN"
+        )
+
     async def test_patient_cannot_book_for_another_record(self):
         # Link user_b to record 501 first, then it must not book for record 500.
         self._post("/patients/501/link-user", self.token_admin, {"phone": "09110000101"})

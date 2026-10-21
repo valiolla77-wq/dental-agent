@@ -11,6 +11,7 @@ import unittest
 
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("SQL_ECHO", "false")
 os.environ.setdefault("JWT_SECRET", "test-secret-key-for-testing-only-32-chars-long")
 os.environ.setdefault("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 os.environ.setdefault(
@@ -24,3 +25,9 @@ class TestEnvironmentInitialization(unittest.TestCase):
         from app.database import DATABASE_URL
 
         self.assertEqual(DATABASE_URL, "sqlite+aiosqlite:///:memory:")
+
+    def test_sql_parameter_logging_is_disabled_by_default(self) -> None:
+        from app.database import SQL_ECHO, engine
+
+        self.assertFalse(SQL_ECHO)
+        self.assertFalse(engine.echo)

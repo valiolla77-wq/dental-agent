@@ -154,13 +154,16 @@ async def ensure_bookable_patient(
     actor: User | None,
     patient_id: int | None,
     national_id: str | None,
-) -> int:
+    full_name: str | None = None,
+    phone: str | None = None,
+) -> int | None:
     """Resolve which patient record a booking may target.
 
-    Staff (admin/receptionist) keep the current behavior: an explicit
-    patient id or the national-id lookup path. A patient-role actor may only
-    book for their own linked record and may never create a new patient
-    identity or reuse somebody else's national id.
+    Staff (admin/receptionist) may use an explicit patient id, an existing
+    national id, or the complete (national_id, full_name, phone) tuple for a
+    new patient that ``create_booking`` will register atomically. A
+    patient-role actor may only book for their own linked record and may never
+    create a new patient identity or reuse somebody else's national id.
     """
     role = actor_role(actor)
     if role is None:
@@ -174,6 +177,12 @@ async def ensure_bookable_patient(
             patient = await _patient_by_national_id(db, national_id)
             if patient is not None:
                 return int(patient.id)
+            if all(
+                isinstance(value, str) and value.strip()
+                for value in (full_name, phone)
+            ):
+                # No patient row exists yet; create_booking will create it.
+                return None
         raise AppError("COMMON_VALIDATION_ERROR")
     if role == "patient":
         linked = await linked_patient_id(db, actor)
@@ -237,7 +246,12 @@ async def authorize_tool_call(
         return
     if action == "appointment:create":
         await ensure_bookable_patient(
-            db, actor, arguments.get("patient_id"), arguments.get("national_id")
+            db,
+            actor,
+            arguments.get("patient_id"),
+            arguments.get("national_id"),
+            arguments.get("full_name"),
+            arguments.get("phone"),
         )
         return
     if action in ("appointment:cancel", "appointment:reschedule"):

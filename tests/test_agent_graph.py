@@ -1,7 +1,7 @@
 import json
 import os
 import unittest
-from datetime import datetime
+from datetime import datetime, time
 
 os.environ.setdefault(
     "CONFIRMATION_HMAC_SECRET",
@@ -16,6 +16,7 @@ from app.models.appointment import Appointment
 from app.models.base import Base
 from app.models.dental_service import DentalService
 from app.models.doctor import Doctor
+from app.models.doctor_schedule import DoctorSchedule
 from app.models.patient import Patient
 from app.models.user import User
 
@@ -62,11 +63,22 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
                 phone="09000000001",
             )
             self.service = DentalService(name="خدمت نمونه گراف", is_active=True)
+            self.doctor.dental_services = [self.service]
             db.add_all([self.patient, self.doctor, self.service])
             await db.commit()
             await db.refresh(self.patient)
             await db.refresh(self.doctor)
             await db.refresh(self.service)
+            db.add(
+                DoctorSchedule(
+                    doctor_id=self.doctor.id,
+                    day_of_week=0,
+                    start_time=time(9),
+                    end_time=time(13),
+                    slot_duration_minutes=30,
+                    is_active=True,
+                )
+            )
             self.appointment = Appointment(
                 patient_id=self.patient.id,
                 doctor_id=self.doctor.id,
@@ -86,6 +98,8 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
             context = {
                 "db": db,
                 "llm": model or FakeChatModel(AIMessage(content="پاسخ آزمایشی")),
+                # Fixed clock keeps past/future assertions reproducible.
+                "now": datetime(2026, 10, 10, 8, 0),
                 # Trusted server-side actor for tool authorization checks.
                 "actor": User(
                     id=1,
@@ -324,8 +338,23 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result1["last_tool_result"]["ok"])
 
         # A new write proposal opens a fresh confirmation for the same session.
+        async with self.session_factory() as db:
+            second_appointment = Appointment(
+                patient_id=self.patient.id,
+                doctor_id=self.doctor.id,
+                service_id=self.service.id,
+                appointment_time=datetime(2026, 10, 10, 11),
+                status="scheduled",
+            )
+            db.add(second_appointment)
+            await db.commit()
+            await db.refresh(second_appointment)
+            second_appointment_id = second_appointment.id
         model2 = FakeChatModel(
-            _call("cancel_appointment", {"appointment_id": self.appointment.id}),
+            _call(
+                "cancel_appointment",
+                {"appointment_id": second_appointment_id},
+            ),
         )
         pending2 = await self._invoke(
             create_initial_state(messages=result1["messages"]),
@@ -445,10 +474,10 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
             _call(
                 "book_appointment",
                 {
-                    "doctor_id": 1,
-                    "service_id": 2,
+                    "doctor_id": self.doctor.id,
+                    "service_id": self.service.id,
                     "appointment_date": "1405/07/18",
-                    "appointment_time": "10:00",
+                    "appointment_time": "11:00",
                     "national_id": "0000000000",
                     "full_name": "بیمار محرمانه",
                     "phone": "09000000000",

@@ -1,5 +1,6 @@
 import unittest
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
+from unittest.mock import patch
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from pydantic import ValidationError
@@ -29,6 +30,17 @@ class AppointmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.jalali_date = gregorian_to_jalali(
             datetime.combine(self.target_date, time.min)
         )[0]
+        # Tests use a fixed Tehran clock; explicit ``now`` arguments still win.
+        self._real_clinic_now = appointment_service.clinic_now
+        self._now_patcher = patch.object(
+            appointment_service,
+            "clinic_now",
+            side_effect=lambda now=None: self._real_clinic_now(
+                datetime(2026, 10, 10, 8, 0) if now is None else now
+            ),
+        )
+        self._now_patcher.start()
+        self.addCleanup(self._now_patcher.stop)
         async with self.session_factory() as db:
             self.patient = Patient(
                 national_id="0000000000",
@@ -64,7 +76,9 @@ class AppointmentServiceTests(unittest.IsolatedAsyncioTestCase):
             )
             await db.commit()
 
-    async def _book(self, db, appointment_time, service_id=None, reason=None):
+    async def _book(
+        self, db, appointment_time, service_id=None, reason=None, now=None
+    ):
         return await appointment_service.create_appointment(
             db=db,
             patient_id=self.patient.id,
@@ -73,6 +87,7 @@ class AppointmentServiceTests(unittest.IsolatedAsyncioTestCase):
             appointment_date=self.jalali_date,
             appointment_time=appointment_time,
             reason=reason,
+            now=now,
         )
 
     async def asyncTearDown(self):
@@ -99,6 +114,110 @@ class AppointmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(appointment.reason, "نمونه دلیل")
         self.assertEqual(appointment.status, "scheduled")
         self.assertEqual(appointment.service_id, self.service.id)
+
+    async def test_past_slot_is_rejected_even_when_schedule_matches(self):
+        async with self.session_factory() as db:
+            with self.assertRaises(AppError) as raised:
+                await self._book(
+                    db,
+                    "10:00",
+                    now=datetime(2026, 10, 10, 10, 30),
+                )
+        self.assertEqual(raised.exception.code, "APPOINTMENT_SLOT_IN_PAST")
+
+    async def test_current_slot_is_rejected(self):
+        async with self.session_factory() as db:
+            with self.assertRaises(AppError) as raised:
+                await self._book(
+                    db,
+                    "10:00",
+                    now=datetime(2026, 10, 10, 10, 0),
+                )
+        self.assertEqual(raised.exception.code, "APPOINTMENT_SLOT_IN_PAST")
+
+    async def test_future_slot_is_accepted(self):
+        async with self.session_factory() as db:
+            appointment = await self._book(
+                db,
+                "10:00",
+                now=datetime(2026, 10, 10, 9, 59),
+            )
+        self.assertEqual(
+            appointment.appointment_time, datetime(2026, 10, 10, 10, 0)
+        )
+
+    async def test_aware_utc_now_is_compared_in_tehran_wall_clock(self):
+        # 06:30 UTC is 10:00 Asia/Tehran, so the 10:00 slot is already current.
+        async with self.session_factory() as db:
+            with self.assertRaises(AppError) as raised:
+                await self._book(
+                    db,
+                    "10:00",
+                    now=datetime(2026, 10, 10, 6, 30, tzinfo=timezone.utc),
+                )
+            future = await self._book(
+                db,
+                "10:30",
+                now=datetime(2026, 10, 10, 6, 30, tzinfo=timezone.utc),
+            )
+        self.assertEqual(raised.exception.code, "APPOINTMENT_SLOT_IN_PAST")
+        self.assertEqual(
+            future.appointment_time, datetime(2026, 10, 10, 10, 30)
+        )
+
+    async def test_jalali_date_is_compared_against_tehran_now(self):
+        async with self.session_factory() as db:
+            with self.assertRaises(AppError) as raised:
+                await self._book(
+                    db,
+                    "09:00",
+                    now=datetime(2026, 10, 10, 6, 30, tzinfo=timezone.utc),
+                )
+        self.assertEqual(raised.exception.code, "APPOINTMENT_SLOT_IN_PAST")
+
+    async def test_reschedule_to_past_slot_is_rejected_and_preserves_time(self):
+        async with self.session_factory() as db:
+            appointment = await self._book(
+                db,
+                "10:00",
+                now=datetime(2026, 10, 10, 8, 0),
+            )
+            with self.assertRaises(AppError) as raised:
+                await appointment_service.reschedule_appointment(
+                    db,
+                    appointment.id,
+                    self.jalali_date,
+                    "09:00",
+                    now=datetime(2026, 10, 10, 10, 30),
+                )
+            await db.refresh(appointment)
+        self.assertEqual(raised.exception.code, "APPOINTMENT_SLOT_IN_PAST")
+        self.assertEqual(
+            appointment.appointment_time, datetime(2026, 10, 10, 10, 0)
+        )
+
+    async def test_available_slots_exclude_past_and_current_times(self):
+        async with self.session_factory() as db:
+            slots = await appointment_service.get_available_slots(
+                db,
+                self.doctor.id,
+                self.jalali_date,
+                now=datetime(2026, 10, 10, 10, 15),
+            )
+        self.assertEqual(
+            slots,
+            ["10:30", "11:00", "11:30", "12:00", "12:30"],
+        )
+
+    async def test_available_slots_for_past_date_are_empty(self):
+        async with self.session_factory() as db:
+            slots = await appointment_service.get_available_slots(
+                db,
+                self.doctor.id,
+                self.jalali_date,
+                now=datetime(2026, 10, 11, 8, 0),
+            )
+        self.assertEqual(slots, [])
 
     async def test_create_outside_schedule_slot_is_rejected(self):
         async with self.session_factory() as db:

@@ -57,6 +57,8 @@ async def create_appointment(
         current_user,
         appointment.patient_id,
         appointment.national_id,
+        appointment.full_name,
+        appointment.phone,
     )
     created = await booking_service.create_booking(
         db=db,

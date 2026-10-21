@@ -50,6 +50,7 @@ class AgentState(TypedDict, total=False):
     confirmation_prompt: str | None
     final_response: str | None
     route: Literal["continue", "execute_tool", "confirmation", "finish"]
+    step_count: int
 
 
 def create_initial_state(
@@ -91,4 +92,5 @@ def create_initial_state(
         confirmation_prompt=None,
         final_response=None,
         route="finish",
+        step_count=0,
     )

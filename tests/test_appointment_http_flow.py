@@ -9,6 +9,7 @@ import asyncio
 import os
 import unittest
 from datetime import datetime, time
+from unittest.mock import patch
 
 # Set test environment variables BEFORE importing app modules.
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
@@ -247,6 +248,12 @@ class AppointmentHttpTransactionTests(unittest.TestCase):
     def setUp(self):
         self.fixture = _seed_fixture()
         self.client = TestClient(app)
+        self._now_patcher = patch(
+            "app.services.appointment_service.clinic_now",
+            return_value=datetime(2026, 10, 10, 8, 0),
+        )
+        self._now_patcher.start()
+        self.addCleanup(self._now_patcher.stop)
         self.jalali_date = gregorian_to_jalali(
             datetime(2026, 10, 10, 0, 0)
         )[0]

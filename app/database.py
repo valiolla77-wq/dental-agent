@@ -13,7 +13,16 @@ from app.db_migration import run_additive_migrations
 # Default to the real database file for production
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dental_agent.db")
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+# Never log SQL parameters by default: they can contain patient identity and
+# confirmation arguments. Operators may opt in explicitly for local debugging.
+SQL_ECHO = os.getenv("SQL_ECHO", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+engine = create_async_engine(DATABASE_URL, echo=SQL_ECHO)
 
 SessionLocal = async_sessionmaker(
     engine,

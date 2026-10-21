@@ -34,6 +34,16 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         self.appointment_date = gregorian_to_jalali(
             datetime.combine(self.target_date, time.min)
         )[0]
+        self._real_clinic_now = appointment_service.clinic_now
+        self._now_patcher = patch.object(
+            appointment_service,
+            "clinic_now",
+            side_effect=lambda now=None: self._real_clinic_now(
+                datetime(2026, 10, 10, 8, 0) if now is None else now
+            ),
+        )
+        self._now_patcher.start()
+        self.addCleanup(self._now_patcher.stop)
         async with self.session_factory() as db:
             self.service = DentalService(name="جرم‌گیری نمونه", is_active=True)
             self.other_service = DentalService(name="ترمیم نمونه", is_active=True)

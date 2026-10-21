@@ -1,5 +1,6 @@
 import unittest
 from datetime import date, datetime, time
+from unittest.mock import patch
 
 from pydantic import ValidationError
 from sqlalchemy import func, select
@@ -32,6 +33,16 @@ class BookingServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         target_date = datetime.combine(date(2026, 10, 10), time.min)
         self.appointment_date = gregorian_to_jalali(target_date)[0]
+        self._real_clinic_now = appointment_service.clinic_now
+        self._now_patcher = patch.object(
+            appointment_service,
+            "clinic_now",
+            side_effect=lambda now=None: self._real_clinic_now(
+                datetime(2026, 10, 10, 8, 0) if now is None else now
+            ),
+        )
+        self._now_patcher.start()
+        self.addCleanup(self._now_patcher.stop)
 
         async with self.session_factory() as db:
             self.service = DentalService(name="جرم‌گیری نمونه", is_active=True)
@@ -113,6 +124,21 @@ class BookingServiceTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIsNotNone(created_patient)
         self.assertEqual(appointment.patient_id, created_patient.id)
+
+    async def test_booking_rejects_past_slot_before_creating_patient(self):
+        async with self.session_factory() as db:
+            with self.assertRaises(AppError) as raised:
+                await self._book_new_patient(
+                    db,
+                    appointment_time="10:30",
+                    now=datetime(2026, 10, 10, 10, 30),
+                )
+        self.assertEqual(raised.exception.code, "APPOINTMENT_SLOT_IN_PAST")
+        async with self.session_factory() as db:
+            patient = await db.scalar(
+                select(Patient).where(Patient.national_id == "0000000001")
+            )
+        self.assertIsNone(patient)
 
     async def test_existing_patient_is_reused_by_national_id(self):
         async with self.session_factory() as db:

@@ -13,6 +13,7 @@ import json
 import os
 import unittest
 from datetime import datetime, time
+from unittest.mock import patch
 
 # Set test environment variables BEFORE importing app modules.
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
@@ -158,6 +159,67 @@ class HistoryAwareNearestModel:
         return AIMessage(content="متوجه نشدم.")
 
 
+class IdentitylessBookingModel:
+    """Scripted model that attempts to book without providing patient identity,
+    relying on the server to inject the authenticated patient's ID."""
+
+    def __init__(
+        self,
+        doctor_id: int,
+        service_id: int,
+        appointment_date: str,
+        appointment_time: str,
+    ):
+        self.doctor_id = doctor_id
+        self.service_id = service_id
+        self.appointment_date = appointment_date
+        self.appointment_time = appointment_time
+        self.calls = 0
+        self.received = []
+
+    def bind_tools(self, tool_schemas):
+        self.tool_schemas = list(tool_schemas)
+        return self
+
+    async def ainvoke(self, messages):
+        self.calls += 1
+        self.received.append(list(messages))
+
+        last = messages[-1]
+        if isinstance(last, ToolMessage):
+            payload = json.loads(last.content)
+            if payload.get("ok"):
+                data = payload["data"]
+                return AIMessage(
+                    content=(
+                        f"نوبت {data['appointment_id']} برای "
+                        f"{data['appointment_time']} ثبت شد."
+                    )
+                )
+            error = payload.get("error") or {}
+            return AIMessage(
+                content=f"رزرو انجام نشد: {error.get('code', 'UNKNOWN')}"
+            )
+
+        # First call: initiate booking without providing patient identity
+        if self.calls == 1:
+            call = _tool_call(
+                "book_appointment",
+                {
+                    "doctor_id": self.doctor_id,
+                    "service_id": self.service_id,
+                    "appointment_date": self.appointment_date,
+                    "appointment_time": self.appointment_time,
+                    # No patient_id, national_id, full_name, or phone provided
+                },
+                "call-book-identityless-1",
+            )
+            return AIMessage(content="", tool_calls=[call])
+
+        # Fallback (should not happen in this test)
+        return AIMessage(content="متوجه نشدم.")
+
+
 class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -174,6 +236,11 @@ class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
         self.jalali_date = gregorian_to_jalali(
             datetime(2026, 10, 10, 0, 0)
         )[0]
+        self._now_patcher = patch(
+            "app.services.appointment_service.clinic_now",
+            return_value=datetime(2026, 10, 10, 8, 0),
+        )
+        self._now_patcher.start()
 
         service = DentalService(name="خدمت تست چت رزرو", is_active=True)
         self.session.add(service)
@@ -224,6 +291,7 @@ class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_chat_llm, None)
+        self._now_patcher.stop()
         await self.session.close()
         await self.engine.dispose()
 
@@ -292,7 +360,9 @@ class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(payload["confirmation_required"])
         self.assertTrue(payload["confirmation_token"])
         self.assertEqual(payload["session_id"], "booking-e2e")
-        self.assertIn(str(self.doctor_id), payload["confirmation_prompt"])
+        self.assertIn("دکتر تست چت رزرو", payload["confirmation_prompt"])
+        self.assertIn("خدمت تست چت رزرو", payload["confirmation_prompt"])
+        self.assertIn(self.jalali_date, payload["confirmation_prompt"])
         self.assertIn("09:00", payload["confirmation_prompt"])
 
         # The read tool really found the free slot before the proposal.
@@ -373,6 +443,15 @@ class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
         payload = response.json()
         self.assertFalse(payload["confirmation_required"])
         self.assertIn("نزدیک‌ترین نوبت", payload["reply"])
+        suggested = payload["suggested_appointments"]
+        self.assertEqual(len(suggested), 3)
+        self.assertEqual(payload["slots"], suggested)
+        self.assertEqual(suggested[0]["doctor_id"], self.doctor_id)
+        self.assertEqual(suggested[0]["doctor_name"], "دکتر تست چت رزرو")
+        self.assertEqual(suggested[0]["service_id"], self.service_id)
+        self.assertEqual(suggested[0]["service_name"], "خدمت تست چت رزرو")
+        self.assertRegex(suggested[0]["appointment_date"], r"^\d{4}/\d{2}/\d{2}$")
+        self.assertRegex(suggested[0]["appointment_time"], r"^\d{2}:\d{2}$")
         self.assertEqual(len(model.tool_calls), 1)
         self.assertEqual(
             model.tool_calls[0]["name"], "find_nearest_appointments"

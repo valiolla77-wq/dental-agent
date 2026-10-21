@@ -253,8 +253,35 @@ class AgentLLMTests(unittest.TestCase):
             "find_nearest_appointments",
             "پوسیدگی",
             "فرقی نمی‌کند",
+            "چند کلیدواژه کوتاه",
+            "بدون `service_id`",
         ):
             self.assertIn(rule, SYSTEM_PROMPT)
+
+    def test_tool_schemas_guide_service_resolution_and_require_service(self):
+        schemas = {
+            schema["function"]["name"]: schema
+            for schema in get_llm_tool_schemas()
+        }
+        service_params = schemas["search_dental_services"]["function"][
+            "parameters"
+        ]["properties"]
+        self.assertIn("کلیدواژه", service_params["query"]["description"])
+        self.assertIn("limit", service_params)
+
+        nearest = schemas["find_nearest_appointments"]["function"]["parameters"]
+        self.assertIn("service_id", nearest["required"])
+        self.assertIn("service_id", nearest["properties"])
+
+    def test_prompt_requires_clarification_before_unscoped_nearest_search(self):
+        for rule in (
+            "خدمت مرتبط را پیدا کن",
+            "چند خدمت محتمل است",
+            "یک سؤال کوتاه بپرس",
+            "خدمات واقعی موجود را فهرست کن",
+        ):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, SYSTEM_PROMPT)
 
 
 if __name__ == "__main__":

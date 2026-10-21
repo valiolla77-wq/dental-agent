@@ -38,8 +38,18 @@ class DemoChatPageTests(unittest.TestCase):
             "confirmationPane",
             "confirmation",
             "session_id",
+            "Vazirmatn",
+            "quickActions",
+            "menuPanel",
         ):
             self.assertIn(marker, body)
+
+    def test_demo_font_assets_are_served(self):
+        for asset in ("Vazirmatn-Arabic.woff2", "Vazirmatn-Latin.woff2"):
+            with self.subTest(asset=asset):
+                response = self.client.get(f"/demo-assets/{asset}")
+                self.assertEqual(response.status_code, 200)
+                self.assertGreater(len(response.content), 10_000)
 
     def test_demo_page_does_not_expose_provider_secrets(self):
         body = self.client.get("/demo").text
@@ -50,6 +60,24 @@ class DemoChatPageTests(unittest.TestCase):
             "sk-",
         ):
             self.assertNotIn(forbidden, body)
+
+    def test_demo_page_renders_safe_slots_and_uncertain_result_states(self):
+        body = self.client.get("/demo").text
+        for marker in (
+            "slots",
+            "suggested_appointments",
+            "slot-card",
+            "appendNotice",
+            "تلاش مجدد",
+            "نتیجهٔ این تأیید مشخص نیست",
+            "بررسی نوبت‌های من",
+            "state.uncertain",
+        ):
+            self.assertIn(marker, body)
+        # Messages and slot cards are inserted as text, never as HTML.
+        self.assertIn("bubble.textContent = text", body)
+        self.assertNotIn("innerHTML", body)
+        self.assertNotIn("insertAdjacentHTML", body)
 
 
 class DemoSeedSafetyTests(unittest.TestCase):

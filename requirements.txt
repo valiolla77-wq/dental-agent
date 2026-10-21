@@ -23,3 +23,7 @@ langchain-anthropic==1.7.5
 
 # JWT for authentication
 PyJWT==2.8.0
+
+# SQLAlchemy's asyncio bridge requires greenlet; it is not installed
+# automatically on every platform.
+greenlet==3.5.6

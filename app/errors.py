@@ -76,6 +76,11 @@ ERROR_CATALOG: dict[str, ErrorDefinition] = {
         "تاریخ واردشده معتبر نیست.", "INFO", False,
         "ASK_USER_TO_CORRECT_INPUT", "INFO", "LOW",
     ),
+    "APPOINTMENT_SLOT_IN_PAST": ErrorDefinition(
+        "APPOINTMENT_SLOT_IN_PAST", 400,
+        "زمان انتخاب‌شده گذشته است؛ لطفاً زمان آینده انتخاب کنید.", "INFO", False,
+        "OFFER_AVAILABLE_SLOTS", "INFO", "LOW",
+    ),
     "APPOINTMENT_NOT_FOUND": ErrorDefinition(
         "APPOINTMENT_NOT_FOUND", 404,
         "نوبت پیدا نشد.", "INFO", False,

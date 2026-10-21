@@ -100,8 +100,9 @@ async def _validate_appointment_slot(
     appointment_time: str,
     *,
     exclude_appointment_id: int | None = None,
+    now: datetime | None = None,
 ) -> datetime:
-    """Validate doctor/service eligibility and return a free valid slot."""
+    """Validate doctor/service eligibility and return a free future slot."""
     doctor = await _get_active_doctor(db, doctor_id)
     dental_service = await db.get(DentalService, service_id)
     if dental_service is None:
@@ -122,6 +123,11 @@ async def _validate_appointment_slot(
         appointment_date,
         appointment_time,
     )
+    # Compare against Tehran wall-clock time in one representation. A slot at
+    # the current minute is already in progress, so it is rejected as well.
+    if appointment_datetime <= clinic_now(now):
+        raise AppError("APPOINTMENT_SLOT_IN_PAST")
+
     schedules = await get_doctor_schedules_for_date(
         db, doctor_id, appointment_datetime.date()
     )
@@ -147,6 +153,32 @@ async def _validate_appointment_slot(
     return appointment_datetime
 
 
+async def validate_appointment_slot(
+    db: AsyncSession,
+    doctor_id: int,
+    service_id: int,
+    appointment_date: str,
+    appointment_time: str,
+    *,
+    exclude_appointment_id: int | None = None,
+    now: datetime | None = None,
+) -> datetime:
+    """Read-only slot validation for confirmations before any write.
+
+    The same rules are enforced again atomically when the write executes, so a
+    slot that changes after the prompt is still rejected.
+    """
+    return await _validate_appointment_slot(
+        db,
+        doctor_id,
+        service_id,
+        appointment_date,
+        appointment_time,
+        exclude_appointment_id=exclude_appointment_id,
+        now=now,
+    )
+
+
 async def create_appointment(
     db: AsyncSession,
     patient_id: int,
@@ -157,6 +189,7 @@ async def create_appointment(
     reason: str | None = None,
     *,
     commit: bool = True,
+    now: datetime | None = None,
 ) -> Appointment:
     patient = await db.get(Patient, patient_id)
     if patient is None:
@@ -168,6 +201,7 @@ async def create_appointment(
         service_id,
         appointment_date,
         appointment_time,
+        now=now,
     )
 
     appointment = Appointment(
@@ -198,6 +232,8 @@ async def reschedule_appointment(
     appointment_id: int,
     appointment_date: str,
     appointment_time: str,
+    *,
+    now: datetime | None = None,
 ) -> Appointment:
     """Move a scheduled appointment atomically without creating history.
 
@@ -221,6 +257,7 @@ async def reschedule_appointment(
             appointment_date,
             appointment_time,
             exclude_appointment_id=appointment.id,
+            now=now,
         )
         appointment.appointment_time = new_datetime
         await db.flush()
@@ -279,6 +316,7 @@ async def get_available_slots(
     appointment_date: str,
     *,
     service_id: int | None = None,
+    now: datetime | None = None,
 ) -> list[str]:
     doctor = await _get_active_doctor(db, doctor_id)
     if service_id is not None:
@@ -318,10 +356,11 @@ async def get_available_slots(
         )
     )
     booked_times = set(result.scalars().all())
+    current = clinic_now(now)
     return [
         slot.strftime("%H:%M")
         for slot in build_schedule_slots(target_date, schedules)
-        if slot not in booked_times
+        if slot > current and slot not in booked_times
     ]
 
 

@@ -23,6 +23,7 @@ os.environ["CONFIRMATION_TTL_SECONDS"] = "300"
 
 from fastapi.testclient import TestClient  # noqa: E402
 from langchain_core.messages import AIMessage  # noqa: E402
+from langgraph.errors import GraphRecursionError  # noqa: E402
 from sqlalchemy import delete, select  # noqa: E402
 
 from app.agent import agent_graph  # noqa: E402
@@ -61,9 +62,16 @@ class CapturingGraph:
         self.graph = graph
         self.contexts = []
 
-    async def ainvoke(self, state, context=None):
+    async def ainvoke(self, state, context=None, config=None):
         self.contexts.append(context)
-        return await self.graph.ainvoke(state, context=context)
+        return await self.graph.ainvoke(state, context=context, config=config)
+
+
+class RecursionGraph:
+    """Simulate LangGraph's loop guard firing before a node can finish."""
+
+    async def ainvoke(self, state, context=None, config=None):
+        raise GraphRecursionError("simulated loop")
 
 
 def _cancel_call(appointment_id, call_id="call-cancel-1"):
@@ -298,6 +306,17 @@ class AgentChatIntegrationTests(unittest.TestCase):
         self.assertIsInstance(context["llm"], FakeChatModel)
         self.assertNotIn("confirmation", context)
 
+    def test_graph_recursion_returns_safe_200_instead_of_500(self):
+        self._install_llm(FakeChatModel(AIMessage(content="unused")))
+        with patch.object(agent_chat_module, "agent_graph", RecursionGraph()):
+            response = self._post(self.token_a, session_id="recursion")
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertIn("بیش از حد پیچیده", payload["reply"])
+        self.assertFalse(payload["confirmation_required"])
+        self.assertEqual(payload["slots"], [])
+        self.assertEqual(payload["session_id"], "recursion")
+
     def test_server_generates_and_returns_a_session_id(self):
         self._install_llm(FakeChatModel(AIMessage(content="سلام")))
         first = self._post(self.token_a)
@@ -530,14 +549,18 @@ class AgentChatIntegrationTests(unittest.TestCase):
         self.assertEqual(_appointment_status(self.appointment_id), "scheduled")
 
     def test_tool_failure_after_consume_burns_the_token(self):
-        missing_id = 9999999
+        self.appointment_id = _create_appointment()
         model = FakeChatModel(
-            _cancel_call(missing_id, call_id="call-fail"),
+            _cancel_call(self.appointment_id, call_id="call-fail"),
             AIMessage(content="نوبت پیدا نشد."),
         )
         _, token = self._issue_write(
-            self.token_a, "sess-fail", missing_id, model
+            self.token_a, "sess-fail", self.appointment_id, model
         )
+        # The appointment disappears between proposal and approval. The token
+        # must still be consumed, and a second approval must not execute.
+        _delete_appointment(self.appointment_id)
+        self.appointment_id = None
 
         failed = self._approve(self.token_a, "sess-fail", token)
         self.assertEqual(failed.status_code, 200, failed.text)

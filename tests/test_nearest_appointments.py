@@ -1,7 +1,7 @@
 """Deterministic tests for nearest-appointment range search."""
 
 import unittest
-from datetime import datetime, time
+from datetime import datetime, time, timezone
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -198,16 +198,54 @@ class NearestAppointmentSearchTests(unittest.IsolatedAsyncioTestCase):
             result.data.appointments[1].appointment_time,
         )
 
+    async def test_aware_utc_now_is_converted_to_tehran_wall_clock(self):
+        utc_now = datetime(
+            2026, 10, 10, 5, 45, tzinfo=timezone.utc
+        )  # 09:15 Asia/Tehran
+        self.assertEqual(
+            appointment_service.clinic_now(utc_now),
+            datetime(2026, 10, 10, 9, 15),
+        )
+        async with self.factory() as db:
+            results = await self._nearest(
+                db,
+                service_id=self.cleaning_id,
+                now=utc_now,
+                limit=3,
+            )
+        self.assertTrue(results)
+        self.assertGreater(
+            datetime.strptime(results[0]["appointment_time"], "%H:%M").time(),
+            time(9, 15),
+        )
+
+    async def test_doctor_time_is_not_duplicated_for_each_service(self):
+        async with self.factory() as db:
+            results = await self._nearest(
+                db,
+                now=datetime(2026, 10, 10, 8, 0),
+                limit=10,
+            )
+        keys = [
+            (item["doctor_id"], item["appointment_date"], item["appointment_time"])
+            for item in results
+        ]
+        self.assertEqual(len(keys), len(set(keys)))
+
     async def test_service_search_matches_description(self):
         async with self.factory() as db:
             results = await dental_service_service.search_dental_services(
                 db, "پوسیدگی"
             )
             no_match = await dental_service_service.search_dental_services(
-                db, "درد"
+                db, "بیمه"
             )
         self.assertEqual([item.id for item in results], [self.filling_id])
         self.assertEqual(no_match, [])
+
+    async def test_nearest_tool_never_accepts_an_unspecified_service(self):
+        with self.assertRaises(TypeError):
+            await find_nearest_appointments(self.factory())
 
 
 if __name__ == "__main__":

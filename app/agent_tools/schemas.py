@@ -1,12 +1,59 @@
-"""Typed inputs and outputs for agent tool operations."""
+"""Typed inputs and outputs for agent tool operations.
 
+Every model-visible argument carries an explicit Persian description and, for
+dates and times, the exact Jalali/24-hour format the services expect. The
+patient identity fields on ``book_appointment`` remain in the base schema for
+staff callers; for authenticated patients the graph hides them from the model
+and injects the linked patient id server-side.
+"""
+
+import re
 from typing import Generic, TypeVar
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+_PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+_CLOCK_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
+
+
+def _normalize_jalali_date(value: str) -> str:
+    """Normalize digit/dash variants without hiding catalogued errors.
+
+    Format and plausible-Jalali-year validation belongs to the service layer so
+    callers receive ``APPOINTMENT_INVALID_DATE`` rather than a generic schema
+    error. Keeping this conversion lenient also keeps the tool error contract
+    stable.
+    """
+    normalized = value.strip().translate(_PERSIAN_DIGITS)
+    return normalized.replace("-", "/").replace(".", "/")
+
+
+def _normalize_clock(value: str) -> str:
+    normalized = value.strip().translate(_PERSIAN_DIGITS)
+    match = _CLOCK_RE.fullmatch(normalized)
+    if match is None:
+        return normalized
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    return f"{hour:02d}:{minute:02d}"
+
 
 class SearchDentalServicesInput(BaseModel):
-    query: str | None = Field(default=None, max_length=150)
+    query: str | None = Field(
+        default=None,
+        max_length=150,
+        description=(
+            "چند کلیدواژه کوتاه فارسی مانند «پوسیدگی»، «درد دندان» یا "
+            "«جرم‌گیری»؛ جمله کامل بیمار را وارد نکن. برای دیدن همه خدمات "
+            "فعال، این مقدار را خالی بگذار."
+        ),
+    )
+    limit: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="حداکثر تعداد خدمات بازگشتی.",
+    )
 
     @field_validator("query")
     @classmethod
@@ -18,68 +65,170 @@ class SearchDentalServicesInput(BaseModel):
 
 
 class FindDoctorsForServiceInput(BaseModel):
-    service_id: int = Field(gt=0)
+    service_id: int = Field(
+        gt=0,
+        description="شناسه خدمت از نتیجه search_dental_services.",
+    )
 
 
 class FindAvailableSlotsInput(BaseModel):
-    service_id: int = Field(gt=0)
-    doctor_id: int = Field(gt=0)
-    appointment_date: str = Field(min_length=1, max_length=20)
+    service_id: int = Field(
+        gt=0,
+        description="شناسه خدمت انتخاب‌شده از search_dental_services.",
+    )
+    doctor_id: int = Field(
+        gt=0,
+        description="شناسه پزشک از نتیجه find_doctors_for_service.",
+    )
+    appointment_date: str = Field(
+        min_length=1,
+        max_length=20,
+        description="تاریخ جلالی با قالب YYYY/MM/DD، مثل 1405/08/15.",
+    )
 
     @field_validator("appointment_date")
     @classmethod
     def normalize_date(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("appointment_date cannot be blank")
-        return normalized
+        return _normalize_jalali_date(value)
 
 
 class FindNearestAppointmentsInput(BaseModel):
-    """Optional filters for an automatic 30-day forward search."""
+    """Filters for an automatic 30-day forward search."""
 
-    service_id: int | None = Field(default=None, gt=0)
-    doctor_id: int | None = Field(default=None, gt=0)
-    days: int = Field(default=30, ge=1, le=60)
-    limit: int = Field(default=3, ge=1, le=10)
+    service_id: int = Field(
+        gt=0,
+        description=(
+            "شناسه خدمتِ انتخاب‌شده از نتیجه search_dental_services؛ "
+            "جست‌وجوی بدون خدمت مجاز نیست تا نوبت خدمت نامرتبط پیشنهاد نشود."
+        ),
+    )
+    doctor_id: int | None = Field(
+        default=None,
+        gt=0,
+        description="اختیاری؛ فقط وقتی بیمار پزشک مشخصی را خواسته است.",
+    )
+    days: int = Field(
+        default=30,
+        ge=1,
+        le=60,
+        description="بازه جست‌وجوی رو به جلو بر حسب روز؛ پیش‌فرض ۳۰ روز.",
+    )
+    limit: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="حداکثر تعداد نوبت پیشنهادی؛ پیش‌فرض ۳.",
+    )
 
 
 class GetPatientAppointmentsInput(BaseModel):
-    patient_id: int = Field(gt=0)
+    patient_id: int = Field(
+        gt=0,
+        description=(
+            "شناسه بیمار؛ برای حساب نقش patient به‌صورت سرور-ساید از "
+            "حساب واردشده تعیین می‌شود."
+        ),
+    )
 
 
 class CancelAppointmentInput(BaseModel):
-    appointment_id: int = Field(gt=0)
+    appointment_id: int = Field(
+        gt=0,
+        description="شناسه نوبت واقعی از نتیجه get_patient_appointments.",
+    )
 
 
 class RescheduleAppointmentInput(BaseModel):
-    appointment_id: int = Field(gt=0)
-    appointment_date: str = Field(min_length=1, max_length=20)
-    appointment_time: str = Field(min_length=1, max_length=10)
+    appointment_id: int = Field(
+        gt=0,
+        description="شناسه نوبت واقعی از نتیجه get_patient_appointments.",
+    )
+    appointment_date: str = Field(
+        min_length=1,
+        max_length=20,
+        description="تاریخ جلالی جدید با قالب YYYY/MM/DD، مثل 1405/08/15.",
+    )
+    appointment_time: str = Field(
+        min_length=1,
+        max_length=10,
+        description="ساعت جدید ۲۴ساعته با قالب HH:MM، مثل 09:30.",
+    )
 
-    @field_validator("appointment_date", "appointment_time")
+    @field_validator("appointment_date")
     @classmethod
-    def normalize_schedule_text(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("value cannot be blank")
-        return normalized
+    def normalize_date(cls, value: str) -> str:
+        return _normalize_jalali_date(value)
+
+    @field_validator("appointment_time")
+    @classmethod
+    def normalize_time(cls, value: str) -> str:
+        return _normalize_clock(value)
 
 
 class BookAppointmentInput(BaseModel):
     """Booking input: existing patient_id or all new/existing patient details."""
 
-    doctor_id: int = Field(gt=0)
-    service_id: int = Field(gt=0)
-    appointment_date: str = Field(min_length=1, max_length=20)
-    appointment_time: str = Field(min_length=1, max_length=10)
-    patient_id: int | None = Field(default=None, gt=0)
-    national_id: str | None = Field(default=None, min_length=1, max_length=10)
-    full_name: str | None = Field(default=None, min_length=1, max_length=150)
-    phone: str | None = Field(default=None, min_length=1, max_length=20)
-    reason: str | None = Field(default=None, max_length=500)
+    doctor_id: int = Field(
+        gt=0,
+        description="شناسه پزشک از نتیجه find_doctors_for_service یا Tool نوبت‌ها.",
+    )
+    service_id: int = Field(
+        gt=0,
+        description="شناسه خدمت انتخاب‌شده از search_dental_services.",
+    )
+    appointment_date: str = Field(
+        min_length=1,
+        max_length=20,
+        description="تاریخ جلالی با قالب YYYY/MM/DD، مثل 1405/08/15.",
+    )
+    appointment_time: str = Field(
+        min_length=1,
+        max_length=10,
+        description="ساعت ۲۴ساعته با قالب HH:MM، مثل 09:30.",
+    )
+    patient_id: int | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "شناسه بیمار موجود؛ برای حساب نقش patient نیازی نیست و "
+            "به‌صورت سرور-ساید تعیین می‌شود."
+        ),
+    )
+    national_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=10,
+        description="کد ملی؛ فقط برای کارکنان و بیمار جدید.",
+    )
+    full_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=150,
+        description="نام کامل؛ فقط برای کارکنان و بیمار جدید.",
+    )
+    phone: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+        description="تلفن؛ فقط برای کارکنان و بیمار جدید.",
+    )
+    reason: str | None = Field(
+        default=None,
+        max_length=500,
+        description="دلیل مراجعه به زبان بیمار؛ اختیاری.",
+    )
 
-    @field_validator("appointment_date", "appointment_time", "national_id", "full_name", "phone")
+    @field_validator("appointment_date")
+    @classmethod
+    def normalize_date(cls, value: str) -> str:
+        return _normalize_jalali_date(value)
+
+    @field_validator("appointment_time")
+    @classmethod
+    def normalize_time(cls, value: str) -> str:
+        return _normalize_clock(value)
+
+    @field_validator("national_id", "full_name", "phone")
     @classmethod
     def reject_blank_text(cls, value: str | None) -> str | None:
         if value is None:

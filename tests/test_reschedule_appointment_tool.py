@@ -34,6 +34,16 @@ class RescheduleAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
         self.no_schedule_date = gregorian_to_jalali(
             datetime.combine(self.target_date + timedelta(days=1), time.min)
         )[0]
+        self._real_clinic_now = appointment_service.clinic_now
+        self._now_patcher = patch.object(
+            appointment_service,
+            "clinic_now",
+            side_effect=lambda now=None: self._real_clinic_now(
+                datetime(2026, 10, 10, 8, 0) if now is None else now
+            ),
+        )
+        self._now_patcher.start()
+        self.addCleanup(self._now_patcher.stop)
         async with self.session_factory() as db:
             self.patient = Patient(
                 national_id="0000000000",

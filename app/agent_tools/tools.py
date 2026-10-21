@@ -143,14 +143,17 @@ def _doctor_item(doctor: Doctor) -> DoctorToolItem:
 async def search_dental_services(
     db: AsyncSession,
     query: str | None = None,
+    *,
+    limit: int = 10,
 ) -> AgentToolResult[list[DentalServiceToolItem]]:
-    """Search active services by an optional partial name match."""
+    """Search active services by short Persian keyword(s)."""
 
     async def operation() -> list[DentalServiceToolItem]:
-        request = SearchDentalServicesInput(query=query)
+        request = SearchDentalServicesInput(query=query, limit=limit)
         services = await dental_service_service.search_dental_services(
             db,
             request.query,
+            limit=request.limit,
         )
         return [_service_item(service) for service in services]
 
@@ -207,7 +210,7 @@ async def find_available_slots(
 async def find_nearest_appointments(
     db: AsyncSession,
     *,
-    service_id: int | None = None,
+    service_id: int,
     doctor_id: int | None = None,
     days: int = 30,
     limit: int = 3,

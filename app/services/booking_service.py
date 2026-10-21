@@ -7,6 +7,8 @@ has a read transaction open (for example after an authorization query).
 Callers must not hold unrelated uncommitted writes when invoking this service.
 """
 
+from datetime import datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import AppError
@@ -26,6 +28,7 @@ async def create_booking(
     full_name: str | None = None,
     phone: str | None = None,
     reason: str | None = None,
+    now: datetime | None = None,
 ) -> Appointment:
     """Reuse or create a patient and book atomically using domain services."""
     try:
@@ -60,6 +63,7 @@ async def create_booking(
             appointment_time=appointment_time,
             reason=reason,
             commit=False,
+            now=now,
         )
 
         # Commit the whole booking (optional new patient + appointment) once.

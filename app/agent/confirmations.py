@@ -23,6 +23,7 @@ from secrets import token_urlsafe
 from typing import Any, Literal, TypedDict
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import AppError
@@ -123,35 +124,44 @@ class ConfirmationStore:
         hashed = _token_hash(token)
 
         # Invalidate the previous proposal for this user/session and drop
-        # expired rows so the table stays bounded.
-        await db.execute(
-            delete(AgentConfirmation).where(
-                AgentConfirmation.user_id == user_id,
-                AgentConfirmation.session_id == normalized_session,
-            )
-        )
-        await db.execute(
-            delete(AgentConfirmation).where(
-                AgentConfirmation.expires_at <= now
-            )
-        )
+        # expired rows so the table stays bounded. A concurrent issue can race
+        # on the (user_id, session_id) unique constraint; retry once with the
+        # same replacement semantics instead of leaking a 500.
+        for attempt in range(2):
+            try:
+                await db.execute(
+                    delete(AgentConfirmation).where(
+                        AgentConfirmation.user_id == user_id,
+                        AgentConfirmation.session_id == normalized_session,
+                    )
+                )
+                await db.execute(
+                    delete(AgentConfirmation).where(
+                        AgentConfirmation.expires_at <= now
+                    )
+                )
 
-        row = AgentConfirmation(
-            user_id=user_id,
-            session_id=normalized_session,
-            tool_name=tool_name,
-            arguments=dict(arguments),
-            tool_call_id=tool_call_id,
-            token_hash=hashed,
-            created_at=now,
-            expires_at=expires_at,
-            consumed_at=None,
-            decision=None,
-        )
-        db.add(row)
-        await db.commit()
-        await db.refresh(row)
-        return _to_record(row, token=token)
+                row = AgentConfirmation(
+                    user_id=user_id,
+                    session_id=normalized_session,
+                    tool_name=tool_name,
+                    arguments=dict(arguments),
+                    tool_call_id=tool_call_id,
+                    token_hash=hashed,
+                    created_at=now,
+                    expires_at=expires_at,
+                    consumed_at=None,
+                    decision=None,
+                )
+                db.add(row)
+                await db.commit()
+                await db.refresh(row)
+                return _to_record(row, token=token)
+            except IntegrityError as exc:
+                await db.rollback()
+                if attempt == 1:
+                    raise AppError("COMMON_CONFLICT") from exc
+        raise AppError("COMMON_CONFLICT")
 
     async def load_active(
         self,
