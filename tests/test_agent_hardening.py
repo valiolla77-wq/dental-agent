@@ -390,7 +390,8 @@ class GraphHardeningTests(unittest.IsolatedAsyncioTestCase):
             self.linked_appointment.appointment_time
         )
         self.assertIn("لغو نوبت", prompt)
-        self.assertIn(str(self.linked_appointment.id), prompt)
+        self.assertNotIn("شماره", prompt)
+        self.assertNotRegex(prompt, r"نوبت\s+\d")
         self.assertIn("دکتر سارا احمدی", prompt)
         self.assertIn("معاینه اولیه دندانپزشکی", prompt)
         self.assertIn(jalali_date, prompt)

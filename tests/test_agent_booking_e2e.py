@@ -395,10 +395,11 @@ class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(appointment.doctor_id, self.doctor_id)
         self.assertEqual(appointment.service_id, self.service_id)
         self.assertEqual(appointment.status, "scheduled")
-        self.assertEqual(
-            final["reply"],
-            f"نوبت {appointment.id} برای {self.jalali_date} 09:00 ثبت شد.",
-        )
+        self.assertIn("نوبت «", final["reply"])
+        self.assertIn(self.jalali_date, final["reply"])
+        self.assertIn("09:00", final["reply"])
+        self.assertIn("ثبت شد", final["reply"])
+        self.assertNotIn(f"نوبت {appointment.id}", final["reply"])
         self.assertEqual(model.calls, 3)
 
         final_messages = model.received[-1]
@@ -542,8 +543,10 @@ class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
         appointments = await self._appointments_at_slot()
         self.assertEqual(len(appointments), 1)
         appointment = appointments[0]
-        self.assertIn(f"نوبت {appointment.id}", final["reply"])
+        self.assertNotIn(f"نوبت {appointment.id}", final["reply"])
+        self.assertNotIn(f"شماره {appointment.id}", final["reply"])
         self.assertIn("ثبت شد", final["reply"])
+        self.assertIn("نوبت «", final["reply"])
         self.assertNotIn("خطای داخلی", final["reply"])
         self.assertEqual(model.calls, 3)
 

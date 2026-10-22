@@ -79,6 +79,26 @@ class DemoChatPageTests(unittest.TestCase):
         self.assertNotIn("innerHTML", body)
         self.assertNotIn("insertAdjacentHTML", body)
 
+    def test_demo_booking_panel_reuses_catalog_and_confirmation_flow(self):
+        body = self.client.get("/demo").text
+        for marker in (
+            "openBooking",
+            "bookingOverlay",
+            "bookingPanel",
+            "bookingSubmit",
+            "رزرو این نوبت",
+            '"/dental-services/"',
+            '"/appointments/available-slots/?doctor_id="',
+            "void sendMessage(technicalMessage, null, displayMessage);",
+        ):
+            self.assertIn(marker, body)
+        # The panel only sends the selected slot to the agent; the existing
+        # confirmation pane remains the only path that can commit a booking.
+        self.assertIn("showConfirmation(data.confirmation_prompt", body)
+        self.assertNotIn('fetch("/appointments"', body)
+        self.assertNotIn("fetch('/appointments'", body)
+        self.assertNotIn("innerHTML", body)
+
 
 class DemoSeedSafetyTests(unittest.TestCase):
     def test_rejects_missing_database_url(self):

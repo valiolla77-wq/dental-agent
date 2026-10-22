@@ -9,9 +9,11 @@ os.environ.setdefault(
 )
 
 from langchain_core.messages import AIMessage, ToolMessage
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agent import TOOL_REGISTRY, agent_graph, create_initial_state
+from app.models.agent_confirmation import AgentConfirmation
 from app.models.appointment import Appointment
 from app.models.base import Base
 from app.models.dental_service import DentalService
@@ -92,6 +94,45 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.engine.dispose()
+
+    async def _add_same_slot_second_appointment(self):
+        """Create a second scheduled appointment for the same patient/time."""
+        async with self.session_factory() as db:
+            doctor = Doctor(
+                full_name="دکتر مینا رضایی",
+                specialty="تخصص دوم",
+                phone="09000000002",
+                is_active=True,
+            )
+            service = DentalService(
+                name="خدمت ویژه دوم",
+                is_active=True,
+            )
+            doctor.dental_services = [service]
+            db.add_all([doctor, service])
+            await db.commit()
+            await db.refresh(doctor)
+            await db.refresh(service)
+            appointment = Appointment(
+                patient_id=self.patient.id,
+                doctor_id=doctor.id,
+                service_id=service.id,
+                appointment_time=self.appointment.appointment_time,
+                status="scheduled",
+            )
+            db.add(appointment)
+            await db.commit()
+            await db.refresh(appointment)
+            return appointment, doctor, service
+
+    async def _confirmation_rows(self, session_id):
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(AgentConfirmation).where(
+                    AgentConfirmation.session_id == session_id
+                )
+            )
+            return list(result.scalars().all())
 
     async def _invoke(self, state, model=None, *, session_id=None, confirmation=None):
         async with self.session_factory() as db:
@@ -241,7 +282,13 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["confirmation_required"])
         self.assertEqual(result["confirmation_status"], "pending")
         self.assertEqual(result["pending_action"]["tool_name"], "cancel_appointment")
-        self.assertIn(str(self.appointment.id), result["confirmation_prompt"])
+        prompt = result["confirmation_prompt"]
+        self.assertNotIn("شماره", prompt)
+        self.assertNotRegex(prompt, r"نوبت\s+\d")
+        self.assertIn("لغو نوبت", prompt)
+        self.assertIn(self.doctor.full_name, prompt)
+        self.assertIn(self.service.name, prompt)
+        self.assertIn("ساعت 10:00", prompt)
         self.assertIsNone(result["last_tool_result"])
         async with self.session_factory() as db:
             stored = await db.get(Appointment, self.appointment.id)
@@ -508,6 +555,165 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(model.received), 2)
         payload = json.loads(model.received[1][-1].content)
         self.assertEqual(payload["error"]["code"], "COMMON_VALIDATION_ERROR")
+
+    async def _statuses(self):
+        async with self.session_factory() as db:
+            first = await db.get(Appointment, self.appointment.id)
+            second = await db.get(Appointment, self.second_appointment.id)
+            return first.status, second.status
+
+    async def test_ambiguous_cancel_requires_clarification_and_no_write(self):
+        (
+            self.second_appointment,
+            _,
+            _,
+        ) = await self._add_same_slot_second_appointment()
+        session = "sess-ambiguous-cancel"
+        model = FakeChatModel(
+            _call("cancel_appointment", {"appointment_id": self.appointment.id})
+        )
+        result = await self._invoke(
+            create_initial_state(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": "نوبت 1405/07/18 ساعت 10:00 را لغو کن",
+                    }
+                ]
+            ),
+            model,
+            session_id=session,
+        )
+
+        self.assertFalse(result["confirmation_required"])
+        self.assertIsNone(result["confirmation_token"])
+        self.assertIsNone(result["pending_action"])
+        self.assertIn("چند نوبت", result["final_response"])
+        self.assertEqual(
+            await self._statuses(), ("scheduled", "scheduled")
+        )
+        self.assertEqual(await self._confirmation_rows(session), [])
+
+    async def test_ambiguous_reschedule_requires_clarification_and_no_write(self):
+        (
+            self.second_appointment,
+            _,
+            _,
+        ) = await self._add_same_slot_second_appointment()
+        session = "sess-ambiguous-reschedule"
+        model = FakeChatModel(
+            _call(
+                "reschedule_appointment",
+                {
+                    "appointment_id": self.appointment.id,
+                    "appointment_date": "1405/07/18",
+                    "appointment_time": "11:00",
+                },
+            )
+        )
+        result = await self._invoke(
+            create_initial_state(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": "نوبت 1405/07/18 ساعت 10:00 را جابه‌جا کن",
+                    }
+                ]
+            ),
+            model,
+            session_id=session,
+        )
+
+        self.assertFalse(result["confirmation_required"])
+        self.assertIsNone(result["confirmation_token"])
+        self.assertIsNone(result["pending_action"])
+        self.assertIn("چند نوبت", result["final_response"])
+        self.assertEqual(
+            await self._statuses(), ("scheduled", "scheduled")
+        )
+        self.assertEqual(await self._confirmation_rows(session), [])
+
+    async def test_exact_cancel_targets_only_the_named_appointment(self):
+        (
+            self.second_appointment,
+            _,
+            _,
+        ) = await self._add_same_slot_second_appointment()
+        session = "sess-exact-cancel"
+        model = FakeChatModel(
+            _call("cancel_appointment", {"appointment_id": self.appointment.id}),
+            AIMessage(content="نوبت لغو شد."),
+        )
+        request = (
+            f"نوبت خدمت {self.service.name} با {self.doctor.full_name} "
+            "در تاریخ 1405/07/18 ساعت 10:00 را لغو کن"
+        )
+        pending = await self._invoke(
+            create_initial_state(messages=[{"role": "user", "content": request}]),
+            model,
+            session_id=session,
+        )
+
+        self.assertTrue(pending["confirmation_required"])
+        self.assertIsNotNone(pending["confirmation_token"])
+        prompt = pending["confirmation_prompt"]
+        self.assertIn(self.service.name, prompt)
+        self.assertIn(self.doctor.full_name, prompt)
+        self.assertNotIn("شماره", prompt)
+        self.assertNotRegex(prompt, r"نوبت\s+\d")
+        self.assertEqual(
+            await self._statuses(), ("scheduled", "scheduled")
+        )
+
+        approved = await self._invoke(
+            pending,
+            model,
+            session_id=session,
+            confirmation={
+                "token": pending["confirmation_token"],
+                "decision": "approved",
+            },
+        )
+        self.assertTrue(approved["last_tool_result"]["ok"])
+        self.assertEqual(
+            approved["last_tool_result"]["data"]["status"], "cancelled"
+        )
+        self.assertEqual(
+            await self._statuses(), ("cancelled", "scheduled")
+        )
+
+    async def test_successful_cancel_final_response_redacts_appointment_id(self):
+        model = FakeChatModel(
+            _call("cancel_appointment", {"appointment_id": self.appointment.id}),
+            AIMessage(
+                content=f"نوبت شماره {self.appointment.id} لغو شد."
+            ),
+        )
+        session = "sess-cancel-id-redaction"
+        pending = await self._invoke(
+            create_initial_state(),
+            model,
+            session_id=session,
+        )
+        approved = await self._invoke(
+            pending,
+            model,
+            session_id=session,
+            confirmation={
+                "token": pending["confirmation_token"],
+                "decision": "approved",
+            },
+        )
+
+        reply = approved["final_response"]
+        self.assertEqual(
+            approved["last_tool_result"]["data"]["status"], "cancelled"
+        )
+        self.assertNotIn(f"نوبت {self.appointment.id}", reply)
+        self.assertNotIn(f"شماره {self.appointment.id}", reply)
+        self.assertIn("لغو شد", reply)
+        self.assertIn(self.service.name, reply)
+        self.assertIn(self.doctor.full_name, reply)
 
 
 if __name__ == "__main__":

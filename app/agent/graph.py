@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any, TypedDict
 from uuid import uuid4
@@ -19,6 +20,10 @@ from pydantic import ValidationError
 from sqlalchemy import inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.appointment_selection import (
+    normalize_text,
+    resolve_appointment_target,
+)
 from app.agent.confirmations import ConfirmationDecision, confirmation_store
 from app.agent.llm import ToolCallingChatModel, create_chat_model
 from app.agent.prompts import build_system_prompt
@@ -73,6 +78,15 @@ def _append_message(
 ) -> list[ConversationMessage]:
     message: ConversationMessage = {"role": role, "content": content, **metadata}  # type: ignore[typeddict-item]
     return [*state.get("messages", []), message]
+
+
+def _latest_user_text(state: AgentState) -> str:
+    """Return the latest user-visible request text from trusted graph state."""
+    for item in reversed(state.get("messages", [])):
+        if item.get("role") == "user":
+            content = item.get("content", "")
+            return _message_content_to_text(content)
+    return ""
 
 
 def _message_content_to_text(content: Any) -> str:
@@ -209,12 +223,9 @@ def _confirmation_prompt(action: PendingAction) -> str:
         )
     elif name == "reschedule_appointment":
         summary += (
-            f" نوبت {args.get('appointment_id', 'نامشخص')} به تاریخ "
-            f"{args.get('appointment_date', 'نامشخص')} ساعت "
+            f" به تاریخ {args.get('appointment_date', 'نامشخص')} ساعت "
             f"{args.get('appointment_time', 'نامشخص')}"
         )
-    elif name == "cancel_appointment":
-        summary += f" شماره {args.get('appointment_id', 'نامشخص')}"
     return f"برای {summary} تأیید می‌کنید؟"
 
 
@@ -321,9 +332,8 @@ async def _describe_action(
 
         if name == "cancel_appointment":
             return (
-                f"لغو نوبت شماره {appointment.id} برای «{service_name}» با "
-                f"{doctor_name} در تاریخ {current_date} ساعت {current_time} "
-                "را تأیید می‌کنید؟"
+                f"لغو نوبت «{service_name}» با {doctor_name} در تاریخ "
+                f"{current_date} ساعت {current_time} را تأیید می‌کنید؟"
             )
 
         target = await validate_appointment_slot(
@@ -337,9 +347,9 @@ async def _describe_action(
         )
         target_date, target_time = gregorian_to_jalali(target)
         return (
-            f"جابه‌جایی نوبت شماره {appointment.id} برای «{service_name}» با "
-            f"{doctor_name} از تاریخ {current_date} ساعت {current_time} "
-            f"به تاریخ {target_date} ساعت {target_time} را تأیید می‌کنید؟"
+            f"جابه‌جایی نوبت «{service_name}» با {doctor_name} از تاریخ "
+            f"{current_date} ساعت {current_time} به تاریخ {target_date} "
+            f"ساعت {target_time} را تأیید می‌کنید؟"
         )
 
     return _confirmation_prompt(action)
@@ -350,20 +360,36 @@ def _catalog_error(code: str) -> AgentToolError:
     return AgentToolError(code=definition.code, message=definition.message, details={})
 
 
-def _successful_write_fallback(state: AgentState) -> str | None:
-    """Describe a committed write when only the final LLM phrasing failed.
+_WRITE_TOOL_NAMES = {
+    "book_appointment",
+    "cancel_appointment",
+    "reschedule_appointment",
+}
 
-    The fallback is derived exclusively from the successful tool result. It
-    never runs the tool again and returns None for failed or non-write tools,
-    so an error cannot be reported as a success.
+
+def _mentions_internal_appointment_id(text: str, appointment_id: int) -> bool:
+    """Whether a user-facing string repeats the internal appointment id."""
+    normalized = normalize_text(text)
+    return bool(
+        re.search(
+            rf"(?<![\d/]){appointment_id}(?![\d/])",
+            normalized,
+        )
+    )
+
+
+async def _write_success_message(
+    db: AsyncSession, state: AgentState
+) -> str | None:
+    """Build a descriptive success message without internal appointment ids.
+
+    All names and times come from the committed database row. If that row is
+    unavailable, use a generic no-id message rather than echoing the tool
+    payload. Returns None for failed or non-write tools.
     """
     name = state.get("last_tool_name")
     result = state.get("last_tool_result")
-    if name not in {
-        "book_appointment",
-        "cancel_appointment",
-        "reschedule_appointment",
-    }:
+    if name not in _WRITE_TOOL_NAMES:
         return None
     if not isinstance(result, dict) or not result.get("ok"):
         return None
@@ -372,25 +398,98 @@ def _successful_write_fallback(state: AgentState) -> str | None:
         return None
 
     appointment_id = data.get("appointment_id")
+    appointment = None
+    if isinstance(appointment_id, int):
+        try:
+            appointment = await db.get(Appointment, appointment_id)
+        except Exception as exc:  # noqa: BLE001 - messaging must not fail
+            logger.warning(
+                "Could not load committed appointment for success message (%s)",
+                type(exc).__name__,
+            )
+    if appointment is not None:
+        try:
+            appointment_date, appointment_time = gregorian_to_jalali(
+                appointment.appointment_time
+            )
+            doctor = await db.get(Doctor, appointment.doctor_id)
+            service = await db.get(DentalService, appointment.service_id)
+            doctor_name = (
+                doctor.full_name if doctor is not None else "پزشک ثبت‌شده"
+            )
+            service_name = (
+                service.name if service is not None else "خدمت ثبت‌شده"
+            )
+        except Exception as exc:  # noqa: BLE001 - messaging must not fail
+            logger.warning(
+                "Could not describe committed appointment (%s)",
+                type(exc).__name__,
+            )
+        else:
+            if name == "book_appointment":
+                return (
+                    f"نوبت «{service_name}» با {doctor_name} در تاریخ "
+                    f"{appointment_date} ساعت {appointment_time} ثبت شد."
+                )
+            if name == "cancel_appointment":
+                return (
+                    f"نوبت «{service_name}» با {doctor_name} در تاریخ "
+                    f"{appointment_date} ساعت {appointment_time} لغو شد."
+                )
+            return (
+                f"نوبت «{service_name}» با {doctor_name} به تاریخ "
+                f"{appointment_date} ساعت {appointment_time} منتقل شد."
+            )
+
+    # No database row is available (for example it disappeared after a
+    # committed write). Keep the fallback success explicit but id-free.
     if name == "book_appointment":
-        if appointment_id is None:
-            return "نوبت با موفقیت ثبت شد."
         appointment_time = data.get("appointment_time")
         if appointment_time:
-            return f"نوبت {appointment_id} برای {appointment_time} ثبت شد."
-        return f"نوبت {appointment_id} با موفقیت ثبت شد."
-
+            return f"نوبت برای {appointment_time} ثبت شد."
+        return "نوبت با موفقیت ثبت شد."
     if name == "cancel_appointment":
-        if appointment_id is None:
-            return "نوبت با موفقیت لغو شد."
-        return f"نوبت {appointment_id} لغو شد."
-
+        return "نوبت با موفقیت لغو شد."
     appointment_time = data.get("appointment_time")
-    if appointment_id is None:
-        return "نوبت با موفقیت جابه‌جا شد."
     if appointment_time:
-        return f"نوبت {appointment_id} به {appointment_time} منتقل شد."
-    return f"نوبت {appointment_id} با موفقیت جابه‌جا شد."
+        return f"نوبت به {appointment_time} منتقل شد."
+    return "نوبت با موفقیت جابه‌جا شد."
+
+
+async def _successful_write_fallback(
+    db: AsyncSession, state: AgentState
+) -> str | None:
+    """Describe a committed write when only the final LLM phrasing failed.
+
+    The fallback is derived exclusively from the successful tool result and
+    committed database row. It never runs the tool again and returns None for
+    failed or non-write tools, so an error cannot be reported as a success.
+    """
+    return await _write_success_message(db, state)
+
+
+async def _sanitize_write_final_response(
+    db: AsyncSession,
+    state: AgentState,
+    response: str,
+) -> str:
+    """Replace an LLM reply that leaked the internal appointment id."""
+    name = state.get("last_tool_name")
+    result = state.get("last_tool_result")
+    if name not in _WRITE_TOOL_NAMES:
+        return response
+    if not isinstance(result, dict) or not result.get("ok"):
+        return response
+    data = result.get("data")
+    if not isinstance(data, dict):
+        return response
+    appointment_id = data.get("appointment_id")
+    if not isinstance(appointment_id, int):
+        return response
+    if not _mentions_internal_appointment_id(response, appointment_id):
+        return response
+    safe = await _write_success_message(db, state)
+    return safe or "عملیات با موفقیت انجام شد."
 
 
 def _tool_message(
@@ -430,6 +529,45 @@ def _finish_rejected_confirmation(state: AgentState) -> dict[str, Any]:
         "selected_tool": None,
         "selected_tool_arguments": {},
         "selected_tool_call_id": None,
+        "route": "finish",
+        "final_response": response,
+        "messages": messages,
+    }
+
+
+def _finish_clarification(state: AgentState, response: str) -> dict[str, Any]:
+    """End a turn with a clarification and no usable write confirmation."""
+    messages = list(state.get("messages", []))
+    for call in state.get("pending_tool_calls", []):
+        messages.append(
+            _tool_message(
+                call_id=call["tool_call_id"],
+                name=call["tool_name"],
+                result={
+                    "ok": False,
+                    "data": None,
+                    "error": {
+                        "code": "APPOINTMENT_SELECTION_REQUIRED",
+                        "message": response,
+                        "details": {},
+                    },
+                },
+            )
+        )
+    messages.append({"role": "assistant", "content": response})
+    return {
+        "confirmation_required": False,
+        "confirmation_token": None,
+        "confirmation_prompt": None,
+        "confirmation_status": "not_required",
+        "pending_action": None,
+        "pending_tool_calls": [],
+        "selected_tool": None,
+        "selected_tool_arguments": {},
+        "selected_tool_call_id": None,
+        "last_tool_result": None,
+        "last_tool_error": None,
+        "last_tool_name": None,
         "route": "finish",
         "final_response": response,
         "messages": messages,
@@ -686,7 +824,9 @@ async def _agent_decision_impl(
             "Agent LLM request failed (%s); exception details omitted",
             type(exc).__name__,
         )
-        fallback = _successful_write_fallback(state)
+        fallback = await _successful_write_fallback(
+            runtime.context["db"], state
+        )
         if fallback is not None:
             return {
                 "last_tool_result": state.get("last_tool_result"),
@@ -738,6 +878,11 @@ async def _agent_decision_impl(
     final_response = _message_content_to_text(getattr(response, "content", ""))
     if not final_response:
         final_response = "متوجه درخواست نشدم؛ لطفاً آن را واضح‌تر بیان کنید."
+    final_response = await _sanitize_write_final_response(
+        runtime.context["db"],
+        state,
+        final_response,
+    )
     return {
         "messages": _append_message(state, "assistant", final_response),
         "final_response": final_response,
@@ -798,6 +943,17 @@ async def _confirmation_node(
             name,
             action.get("arguments") or {},
         )
+        if name in {"cancel_appointment", "reschedule_appointment"}:
+            selection = await resolve_appointment_target(
+                db,
+                appointment_id=(action.get("arguments") or {}).get(
+                    "appointment_id"
+                ),
+                user_text=_latest_user_text(state),
+                now=runtime.context.get("now"),
+            )
+            if selection.clarification:
+                return _finish_clarification(state, selection.clarification)
         prompt = await _describe_action(
             db,
             action,
