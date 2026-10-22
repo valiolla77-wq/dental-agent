@@ -13,6 +13,7 @@ from app.routers.dental_services import router as dental_services_router
 from app.auth import auth_router
 from app.error_handling import configure_error_handling
 from app.routers.agent_chat import router as agent_chat_router
+from app.routers.dashboard import router as dashboard_router
 
 _DEMO_CHAT_PAGE = Path(__file__).resolve().parent.parent / "demo" / "chat.html"
 
@@ -31,6 +32,7 @@ app = FastAPI(
 
 configure_error_handling(app)
 
+app.include_router(dashboard_router)
 app.include_router(auth_router)
 app.include_router(agent_chat_router)
 app.include_router(users_router)
@@ -58,3 +60,11 @@ def health():
 def demo_chat_page():
     """Serve the same-origin browser demo for the patient agent chat."""
     return FileResponse(_DEMO_CHAT_PAGE, media_type="text/html")
+
+
+@app.get("/dashboard", include_in_schema=False)
+@app.get("/dashboard/", include_in_schema=False)
+def dashboard_page():
+    """Public shell only; all clinic data requires staff authentication."""
+    return FileResponse(_DEMO_CHAT_PAGE.with_name("dashboard.html"), media_type="text/html",
+                        headers={"Cache-Control": "no-store"})

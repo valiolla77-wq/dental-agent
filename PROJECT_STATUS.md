@@ -2604,3 +2604,12 @@ Monthly: 2
 ---
 
 # END OF PROJECT STATUS
+
+## 2026-10-22 — Staff workspace increment
+
+- Added a same-origin Persian RTL `/dashboard` shell with in-memory staff login, database-backed daily schedule/metrics, local search, empty/error/loading states and agent chat using the existing server-owned confirmation flow.
+- Added read-only `/dashboard/overview`: existing `appointment:read` permission gates all records and aggregate counts. No phone numbers, national IDs, appointment reasons or agent confirmation tokens are returned. Both page and data disable browser caching.
+- Day filtering uses the existing naive appointment datetime convention, with Tehran's current date as the default; explicit input is Gregorian (1900–2100), display is Jalali. At most 200 rows are returned with a truncation indicator; counts remain complete.
+- No new schema, direct agent database access, autonomous writes, clinical advice, billing or external SMS integration introduced. Existing role policy is unchanged.
+- Corrected SQLAlchemy dependency to request the asyncio extra (greenlet is required by SQLAlchemy 2.1 async sessions).
+- Verification: full unittest discovery passed all 338 tests including date-bound/cache regressions. Live HTTP smoke test passed dashboard page, demo admin login and authenticated database overview.
