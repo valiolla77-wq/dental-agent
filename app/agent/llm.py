@@ -102,7 +102,10 @@ class OpenRouterProvider:
             temperature=config.temperature,
             app_url=config.app_url,
             app_title=config.app_title,
-            max_retries=0,
+            # The provider SDK retries transient 429/5xx responses with
+            # exponential backoff. Model calls are read-only; clinic writes
+            # still happen exactly once in the tool execution node.
+            max_retries=2,
         )
 
 
@@ -115,6 +118,13 @@ class OpenAICompatibleProvider:
                 "AGENT_LLM_API_KEY is required when AGENT_LLM_PROVIDER=openai."
             )
 
+        try:
+            timeout = float(os.getenv("AGENT_LLM_TIMEOUT_SECONDS", "60"))
+        except ValueError:
+            timeout = 60.0
+        if timeout <= 0:
+            timeout = 60.0
+
         # Import lazily: provider_factory imports ToolCallingChatModel from
         # this module, so a top-level import would create a cycle.
         from app.agent.provider_factory import create_provider_model
@@ -126,8 +136,10 @@ class OpenAICompatibleProvider:
             model=config.model,
             api_key=config.api_key,
             temperature=config.temperature,
-            timeout=60.0,
-            max_retries=0,
+            timeout=timeout,
+            # Retry transient provider throttling/timeouts. This only repeats
+            # the model decision; tool execution is a separate graph node.
+            max_retries=2,
         )
         return create_provider_model(settings)
 

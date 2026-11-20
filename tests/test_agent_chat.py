@@ -74,6 +74,16 @@ class RecursionGraph:
         raise GraphRecursionError("simulated loop")
 
 
+class SingleTurnGraph:
+    """Return a fixed graph state (used to exercise post-turn bookkeeping)."""
+
+    def __init__(self, result):
+        self.result = result
+
+    async def ainvoke(self, state, context=None, config=None):
+        return self.result
+
+
 def _cancel_call(appointment_id, call_id="call-cancel-1"):
     return AIMessage(
         content="",
@@ -316,6 +326,58 @@ class AgentChatIntegrationTests(unittest.TestCase):
         self.assertFalse(payload["confirmation_required"])
         self.assertEqual(payload["slots"], [])
         self.assertEqual(payload["session_id"], "recursion")
+
+    def test_non_listing_tool_turn_returns_200_without_options(self):
+        """A read tool that returns no selectable list must not crash the route."""
+        self._install_llm(FakeChatModel(AIMessage(content="unused")))
+        graph = SingleTurnGraph(
+            {
+                "final_response": "نوبت‌های شما در فهرست آمده است.",
+                "last_tool_name": "get_my_appointments",
+                "last_tool_result": {"ok": True, "data": [{"id": 1}]},
+            }
+        )
+        with patch.object(agent_chat_module, "agent_graph", graph):
+            response = self._post(self.token_a, session_id="non-listing")
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["reply"], "نوبت‌های شما در فهرست آمده است.")
+        self.assertEqual(payload["options"], [])
+        self.assertFalse(payload["confirmation_required"])
+
+    def test_appointment_options_carry_date_and_time(self):
+        """Suggested-appointment cards must be distinguishable by slot."""
+        self._install_llm(FakeChatModel(AIMessage(content="unused")))
+        graph = SingleTurnGraph(
+            {
+                "final_response": "نزدیک‌ترین نوبت‌ها:",
+                "last_tool_name": "find_nearest_appointments",
+                "last_tool_result": {
+                    "ok": True,
+                    "data": {
+                        "appointments": [
+                            {
+                                "doctor_id": 1,
+                                "service_id": 2,
+                                "service_name": "معاینه و مشاوره",
+                                "doctor_name": "دکتر نمونه",
+                                "appointment_date": "1405/08/02",
+                                "appointment_time": "14:00",
+                            }
+                        ]
+                    },
+                },
+            }
+        )
+        with patch.object(agent_chat_module, "agent_graph", graph):
+            response = self._post(self.token_a, session_id="appointment-options")
+        self.assertEqual(response.status_code, 200, response.text)
+        options = response.json()["options"]
+        self.assertEqual(len(options), 1)
+        self.assertEqual(options[0]["kind"], "appointment")
+        self.assertEqual(options[0]["appointment_date"], "1405/08/02")
+        self.assertEqual(options[0]["appointment_time"], "14:00")
+        self.assertEqual(options[0]["doctor_name"], "دکتر نمونه")
 
     def test_server_generates_and_returns_a_session_id(self):
         self._install_llm(FakeChatModel(AIMessage(content="سلام")))
@@ -574,6 +636,94 @@ class AgentChatIntegrationTests(unittest.TestCase):
         replay = self._approve(self.token_a, "sess-fail", token)
         self.assertEqual(replay.status_code, 409)
         self.assertEqual(model.calls, 2)
+
+
+class AgentChatNoProviderTests(unittest.TestCase):
+    """The documented "system works without an LLM" contract at HTTP level.
+
+    With no AGENT_LLM_* configuration, every other feature keeps working and
+    the chat endpoint answers the catalogued, retryable 503 with a Persian
+    message — never a 500 and never leaked configuration detail.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        _run(init_db())
+
+    def setUp(self):
+        self.client = TestClient(app)
+        self.phone = "09360002010"
+        _delete_user(self.phone)
+        self.user = _create_user(self.phone, role="patient")
+        self.token = create_access_token(subject=str(self.user.id))
+
+    def tearDown(self):
+        app.dependency_overrides.pop(get_chat_llm, None)
+        _delete_user(self.phone)
+
+    @staticmethod
+    def _empty_provider_env():
+        return {
+            "AGENT_LLM_PROVIDER": "",
+            "AGENT_LLM_MODEL": "",
+            "AGENT_LLM_BASE_URL": "",
+            "AGENT_LLM_TEMPERATURE": "",
+        }
+
+    def test_get_chat_llm_raises_catalogued_error_without_config(self):
+        from app.errors import AppError
+
+        with patch.dict(os.environ, self._empty_provider_env()):
+            with self.assertRaises(AppError) as caught:
+                get_chat_llm()
+        self.assertEqual(caught.exception.code, "AGENT_PROVIDER_NOT_CONFIGURED")
+
+    def test_chat_endpoint_answers_catalogued_503_without_config(self):
+        with patch.dict(os.environ, self._empty_provider_env()):
+            response = self.client.post(
+                "/agent/chat",
+                json={"message": "سلام"},
+                headers={"Authorization": f"Bearer {self.token}"},
+            )
+        self.assertEqual(response.status_code, 503)
+        body = response.json()
+        self.assertEqual(body["error"]["code"], "AGENT_PROVIDER_NOT_CONFIGURED")
+        self.assertTrue(body["error"]["message"])
+        # No provider variable name or value may leak through the response.
+        self.assertNotIn("AGENT_LLM", response.text)
+        self.assertNotIn("ollama", response.text.lower())
+
+    def test_conversation_ops_work_without_llm(self):
+        # The CRUD side of the assistant must stay LLM-independent: listing
+        # conversations works, and the failed chat turn (which aborts at
+        # dependency resolution, before any handler code runs) must not
+        # create or persist a conversation. The list is compared before and
+        # after because the process-wide test database recycles user ids
+        # across test classes, so an absolute emptiness assert would be
+        # testing test isolation rather than the endpoint contract.
+        before = self.client.get(
+            "/agent/conversations",
+            headers={"Authorization": f"Bearer {self.token}"},
+        )
+        self.assertEqual(before.status_code, 200)
+        before_ids = [row["session_id"] for row in before.json()]
+
+        with patch.dict(os.environ, self._empty_provider_env()):
+            created = self.client.post(
+                "/agent/chat",
+                json={"message": "سلام"},
+                headers={"Authorization": f"Bearer {self.token}"},
+            )
+            self.assertEqual(created.status_code, 503)
+
+            after = self.client.get(
+                "/agent/conversations",
+                headers={"Authorization": f"Bearer {self.token}"},
+            )
+        self.assertEqual(after.status_code, 200)
+        self.assertEqual(
+            [row["session_id"] for row in after.json()], before_ids
+        )
 
 
 if __name__ == "__main__":

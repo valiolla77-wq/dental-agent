@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0E7C7B">
+  <title>سامانه کلینیک دندان‌پزشکی</title>
+  <link rel="stylesheet" href="/app-assets/app.css">
+</head>
+<body>
+
+  <!-- ============ Login ============ -->
+  <div id="loginView" class="login-wrap">
+    <div class="card">
+      <h1>سامانه مدیریت کلینیک دندان‌پزشکی</h1>
+      <p class="muted">ورود با نقش پذیرش، پزشک و مدیر با رمز عبور؛ ورود بیمار با کد پیامکی انجام می‌شود.</p>
+
+      <div class="tabs-small">
+        <button id="tabLoginPassword" type="button" class="secondary active">رمز عبور</button>
+        <button id="tabLoginOtp" type="button" class="ghost">کد پیامکی (بیمار)</button>
+      </div>
+
+      <form id="passwordLoginForm" class="stack">
+        <label class="field">شماره تلفن
+          <input id="loginPhone" name="phone" inputmode="tel" autocomplete="username">
+        </label>
+        <label class="field">رمز عبور
+          <input id="loginPassword" name="password" type="password" autocomplete="current-password">
+        </label>
+        <button id="loginPasswordBtn" class="btn" type="submit">ورود</button>
+      </form>
+
+      <form id="otpLoginForm" class="stack" hidden>
+        <label class="field">شماره تلفن بیمار
+          <input id="otpPhone" inputmode="tel">
+        </label>
+        <button id="requestOtp" class="btn secondary" type="button">دریافت کد</button>
+        <div id="otpCodeWrap" hidden>
+          <label class="field">کد پیامکی
+            <input id="otpCode" inputmode="numeric">
+          </label>
+          <button id="verifyOtp" class="btn" type="button">ورود با کد</button>
+        </div>
+      </form>
+
+      <div id="loginError" class="notice error" hidden></div>
+      <div id="loginNotice" class="notice info" hidden></div>
+    </div>
+    <p class="style-note">سامانه به FastAPI و دستیار عامل‌محور LangGraph متصل است. راهنمای اجرا: docs/08-setup.md</p>
+  </div>
+
+  <!-- ============ Panel ============ -->
+  <div id="panelView" hidden>
+    <div id="appShell">
+      <header class="app-header">
+        <span class="brand">سامانه کلینیک دندان‌پزشکی</span>
+        <div class="user-chip">
+          <span id="panelUserName"></span>
+          <span id="panelUserRole" class="role-badge"></span>
+          <button id="logoutBtn" class="btn ghost" type="button">خروج</button>
+        </div>
+      </header>
+
+      <nav id="panelNav" class="nav-tabs" aria-label="بخش‌ها"></nav>
+
+      <div id="globalNotice" class="notice info" hidden></div>
+
+      <!-- Dashboard -->
+      <section id="tab-dashboard" hidden>
+        <div id="dashboardCards" class="stat-cards"></div>
+        <div class="card">
+          <h2>نوبت‌های پیش‌رو</h2>
+          <div id="dashboardAppointments" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <!-- Appointments -->
+      <section id="tab-appointments" hidden>
+        <div class="card">
+          <h2 id="appointmentsTitle">نوبت‌ها</h2>
+          <div id="appointmentsFilters" class="filters-row"></div>
+          <div id="appointmentsTable" class="table-wrap"></div>
+        </div>
+        <div id="bookingCard" class="card" hidden>
+          <h2>ثبت نوبت</h2>
+          <form id="bookingForm" class="stack">
+            <div class="filters-row">
+              <label class="field">بیمار
+                <input id="bookingPatientSearch" list="bookingPatientOptions" placeholder="جستجوی نام / شماره / کد ملی">
+                <datalist id="bookingPatientOptions"></datalist>
+              </label>
+              <label class="field">پزشک
+                <select id="bookingDoctor"></select>
+              </label>
+              <label class="field">خدمت
+                <select id="bookingService"></select>
+              </label>
+              <label class="field">تاریخ (جلالی، مثل 1405/08/01)
+                <input id="bookingDate" placeholder="1405/08/01">
+              </label>
+              <button id="bookingLoadSlots" class="btn secondary" type="button">نمایش ساعت‌های آزاد</button>
+            </div>
+            <label class="field">ساعت
+              <select id="bookingSlot"></select>
+            </label>
+            <label class="field">علت (اختیاری)
+              <input id="bookingReason" maxlength="500">
+            </label>
+            <button class="btn" id="bookingSubmit" type="submit">ثبت نوبت</button>
+          </form>
+        </div>
+        <div id="appointmentActionForm" class="inline-form" hidden></div>
+      </section>
+
+      <!-- Patients -->
+      <section id="tab-patients" hidden>
+        <div class="card">
+          <h2>بیماران</h2>
+          <div class="filters-row">
+            <label class="field">جستجو (نام / شماره / کد ملی)
+              <input id="patientSearch">
+            </label>
+            <button id="patientSearchBtn" class="btn secondary" type="button">جستجو</button>
+          </div>
+          <div id="patientsTable" class="table-wrap"></div>
+          <div id="patientForm" class="inline-form" hidden></div>
+        </div>
+      </section>
+
+      <!-- Doctors -->
+      <section id="tab-doctors" hidden>
+        <div class="card">
+          <h2>پزشکان</h2>
+          <div id="doctorsTable" class="table-wrap"></div>
+          <div id="doctorForm" class="inline-form" hidden></div>
+        </div>
+      </section>
+
+      <!-- Services -->
+      <section id="tab-services" hidden>
+        <div class="card">
+          <h2>خدمات دندان‌پزشکی</h2>
+          <div id="servicesTable" class="table-wrap"></div>
+          <div id="serviceForm" class="inline-form" hidden></div>
+        </div>
+      </section>
+
+      <!-- Schedules -->
+      <section id="tab-schedules" hidden>
+        <div class="card">
+          <h2>برنامه‌ی پزشکان</h2>
+          <div class="filters-row">
+            <label class="field">پزشک
+              <select id="scheduleDoctor"></select>
+            </label>
+            <button id="scheduleLoad" class="btn secondary" type="button">نمایش برنامه</button>
+          </div>
+          <div id="schedulesTable" class="table-wrap"></div>
+          <div id="scheduleForm" class="inline-form" hidden></div>
+        </div>
+      </section>
+
+      <!-- Users (admin) -->
+      <section id="tab-users" hidden>
+        <div class="card">
+          <h2>کاربران</h2>
+          <div id="usersTable" class="table-wrap"></div>
+          <div id="userForm" class="inline-form" hidden></div>
+        </div>
+      </section>
+
+      <!-- Agent chat -->
+      <section id="tab-agent" hidden>
+        <div class="card">
+          <h2>دستیار هوشمند کلینیک</h2>
+          <p class="muted">دستیار از ابزارهای مجاز سامانه استفاده می‌کند؛ عملیات حساس قبل از اجرا تأیید می‌شود.</p>
+          <div id="chatMessages" aria-live="polite"></div>
+          <div id="chatNotice" class="notice warn" hidden></div>
+          <div id="confirmationPane" hidden>
+            <p id="confirmationPrompt"></p>
+            <div class="actions-row">
+              <button id="approve" class="btn" type="button">تأیید می‌کنم</button>
+              <button id="reject" class="btn secondary" type="button">لغو درخواست</button>
+            </div>
+          </div>
+          <div id="quickActions" class="actions-row" style="margin-top:8px;"></div>
+          <form id="composer" class="actions-row" style="margin-top:10px;">
+            <input id="messageInput" style="flex:1;" maxlength="4000" autocomplete="off">
+            <button id="sendBtn" class="btn" type="submit">ارسال</button>
+          </form>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/app-assets/app.js"></script>
+</body>
+</html>

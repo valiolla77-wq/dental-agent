@@ -2,12 +2,12 @@
 
 import asyncio
 import os
+import sys
 import time
 import unittest
 from datetime import timedelta
-from unittest.mock import patch
 from io import StringIO
-import sys
+from unittest.mock import patch
 
 # Set test environment variables BEFORE importing app modules
 # Use in-memory SQLite database for tests to avoid interfering with real data
@@ -16,19 +16,17 @@ os.environ["JWT_SECRET"] = "test-secret-key-for-testing-only-32-chars-long"
 os.environ["JWT_ACCESS_TOKEN_EXPIRE_MINUTES"] = "30"
 
 import jwt
-from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from app.auth.dependencies import get_current_user, require_admin
-from app.auth.router import router as auth_router
+from app.auth.dependencies import get_current_user
 from app.auth.security import (
+    JWT_AUDIENCE,
+    JWT_ISSUER,
     create_access_token,
     decode_access_token,
     hash_password,
     verify_password,
 )
-from app.database import get_db
-from app.error_handling import configure_error_handling
 from app.main import app
 from app.models.user import User
 
@@ -81,8 +79,7 @@ class TestJWTToken(unittest.TestCase):
         self.assertIn("expired", str(ctx.exception).lower())
 
     def test_token_rejects_wrong_signature(self):
-        token = create_access_token(subject="123")
-        # Decode and re-encode with different secret
+        # A token signed with a different secret must be rejected.
         wrong_secret = "different-secret"
         tampered = jwt.encode(
             {"sub": "123", "exp": time.time() + 3600},
@@ -116,8 +113,9 @@ class TestLoginEndpoint(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Initialize the database once for all tests in this class."""
-        from app.database import init_db
         import asyncio
+
+        from app.database import init_db
         asyncio.run(init_db())
 
     def setUp(self):
@@ -125,9 +123,9 @@ class TestLoginEndpoint(unittest.TestCase):
 
     def _create_test_user(self, phone: str, password: str, role: str = "user", is_active: bool = True) -> User:
         """Helper to create a user in the test database."""
-        from sqlalchemy.ext.asyncio import AsyncSession
-        from app.database import SessionLocal
         import asyncio
+
+        from app.database import SessionLocal
 
         async def _create():
             async with SessionLocal() as db:
@@ -147,9 +145,11 @@ class TestLoginEndpoint(unittest.TestCase):
 
     def _delete_test_user(self, phone: str):
         """Helper to delete a test user."""
-        from sqlalchemy import delete
-        from app.database import SessionLocal
         import asyncio
+
+        from sqlalchemy import delete
+
+        from app.database import SessionLocal
 
         async def _delete():
             async with SessionLocal() as db:
@@ -274,15 +274,18 @@ class TestBootstrapAdminCLI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Initialize the database once for all tests in this class."""
-        from app.database import init_db
         import asyncio
+
+        from app.database import init_db
         asyncio.run(init_db())
 
     def setUp(self):
         # Clean up any existing test admin users
-        from sqlalchemy import delete
-        from app.database import SessionLocal
         import asyncio
+
+        from sqlalchemy import delete
+
+        from app.database import SessionLocal
 
         async def _cleanup():
             async with SessionLocal() as db:
@@ -337,9 +340,11 @@ class TestBootstrapAdminCLI(unittest.TestCase):
         self.assertIn("True", stdout)  # is_active
 
         # Verify user exists in database
-        from sqlalchemy import select
-        from app.database import SessionLocal
         import asyncio
+
+        from sqlalchemy import select
+
+        from app.database import SessionLocal
 
         async def _check():
             async with SessionLocal() as db:
@@ -405,9 +410,9 @@ class TestBootstrapAdminCLI(unittest.TestCase):
         password = "securepass123"
 
         # Create a regular user with this phone
-        from sqlalchemy.ext.asyncio import AsyncSession
-        from app.database import SessionLocal
         import asyncio
+
+        from app.database import SessionLocal
 
         async def _create_regular():
             async with SessionLocal() as db:
@@ -456,13 +461,49 @@ class TestNoSecretLeakage(unittest.TestCase):
         """Test JWT token doesn't automatically include sensitive data."""
         token = create_access_token(subject="1")
         payload = decode_access_token(token)
-        # Our implementation only includes sub, exp, iat by default
-        # No sensitive data like password should be auto-included
+        # Standard claims only: identity/expiry plus issuer/audience
+        # pinning. No sensitive data (password, hash, role) is ever
+        # auto-included, and the credential digest appears only when the
+        # caller explicitly passes password_hash.
         self.assertIn("sub", payload)
         self.assertIn("exp", payload)
         self.assertIn("iat", payload)
         self.assertNotIn("password", payload)
-        self.assertEqual(set(payload.keys()), {"sub", "exp", "iat"})
+        self.assertNotIn("password_hash", payload)
+        self.assertEqual(set(payload.keys()), {"sub", "exp", "iat", "iss", "aud"})
+
+    def test_token_pins_issuer_and_audience(self):
+        """Tokens are rejected when iss/aud do not match this service."""
+        token = create_access_token(subject="1")
+        self.assertEqual(decode_access_token(token)["iss"], JWT_ISSUER)
+        self.assertEqual(decode_access_token(token)["aud"], JWT_AUDIENCE)
+
+        import jwt as jwt_lib
+
+        from app.auth import security
+
+        secret = security._get_jwt_secret()
+        with self.assertRaises(jwt_lib.InvalidTokenError):
+            jwt_lib.decode(
+                token,
+                secret,
+                algorithms=["HS256"],
+                audience="another-service",
+            )
+
+    def test_password_reset_revokes_outstanding_tokens(self):
+        """A token bound to the old password hash dies on a reset."""
+        from app.auth.security import password_version
+
+        old_hash = hash_password("OldPassword!1")
+        token = create_access_token(subject="1", password_hash=old_hash)
+        # Same credential: valid.
+        self.assertEqual(decode_access_token(token)["pwv"], password_version(old_hash))
+        # After a reset the hash changes; the endpoint-side comparison in
+        # get_current_user rejects the mismatch. The claim itself is checked
+        # with compare_digest there; here we pin the digest contract.
+        new_hash = hash_password("NewPassword!2")
+        self.assertNotEqual(password_version(old_hash), password_version(new_hash))
 
     def test_token_includes_extra_claims_when_provided(self):
         """Test JWT token includes extra_claims when explicitly provided."""
@@ -547,6 +588,7 @@ def _create_user(phone, password, role="user", is_active=True):
 def _delete_user(phone):
     """Remove a user by phone from the shared test database."""
     from sqlalchemy import delete
+
     from app.database import SessionLocal
 
     async def _run():
@@ -560,6 +602,7 @@ def _delete_user(phone):
 def _set_user_active(phone, active):
     """Toggle is_active for a user in the shared test database."""
     from sqlalchemy import update
+
     from app.database import SessionLocal
 
     async def _run():

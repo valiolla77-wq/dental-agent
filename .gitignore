@@ -35,9 +35,18 @@ build/
 dist/
 *.egg-info/
 
+# Project run outputs
+output/
+tmp/
+.tmp-run.out
+openapi-report.json
+
+# Node dependencies (webapp has its own .gitignore; this covers the root)
+node_modules/
+
+# Local archives and exports
+*.zip
+
 # Operating system files
 .DS_Store
 Thumbs.db
-
-# Project run outputs
-output/

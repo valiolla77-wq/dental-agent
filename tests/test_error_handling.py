@@ -87,6 +87,7 @@ class ErrorHandlingTests(unittest.TestCase):
         body = response.json()["error"]
         self.assertEqual(body["code"], "DATABASE_ERROR")
         self.assertNotIn("sensitive database details", response.text)
+        self.assertNotIn("sensitive database details", "\n".join(captured.output))
         self.assertEqual(response.headers["x-request-id"], body["request_id"])
         self.assertTrue(
             any(
@@ -105,6 +106,7 @@ class ErrorHandlingTests(unittest.TestCase):
         body = response.json()["error"]
         self.assertEqual(body["code"], "INTERNAL_ERROR")
         self.assertNotIn("sensitive internal details", response.text)
+        self.assertNotIn("sensitive internal details", "\n".join(captured.output))
         self.assertEqual(response.headers["x-request-id"], body["request_id"])
         self.assertTrue(
             any(

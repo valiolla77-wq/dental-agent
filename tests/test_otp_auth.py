@@ -59,17 +59,6 @@ class OtpAuthTests(unittest.TestCase):
         _ip_requests.clear()
         fake_sms.outbox.pop(self.phone, None)
 
-    @staticmethod
-    def _db_session():
-        # purge helper needs a session; open a short-lived one synchronously.
-        import asyncio as _asyncio
-
-        async def _noop():
-            async with SessionLocal() as db:
-                return db
-
-        return _run(_noop())
-
     def _request_code(self, phone=None):
         response = self.client.post(
             "/auth/otp/request", json={"phone": phone or self.phone}
@@ -326,6 +315,29 @@ class OtpAuthTests(unittest.TestCase):
         record = fake_sms.last_message(self.phone)
         self.assertIsNotNone(record)
         self.assertIn(body["dev_otp"], record)
+
+    def test_delivery_failure_burns_code_and_stays_generic(self):
+        class _FailingProvider:
+            async def send(self, phone, body, code=None):
+                raise RuntimeError(f"vendor exploded for {code}")
+
+        with patch("app.auth.otp.get_sms_provider", return_value=_FailingProvider()):
+            first = self.client.post("/auth/otp/request", json={"phone": self.phone})
+            # Post-response delivery: a vendor failure can never surface in
+            # the response, so the status and body stay uniform for every
+            # phone (the old 503 would have distinguished patient phones).
+            self.assertEqual(first.status_code, 202)
+            self.assertEqual(first.json()["status"], "accepted")
+            self.assertNotIn("vendor exploded", first.text)
+
+            # The failed delivery burns the code asynchronously, so the
+            # resend cooldown cannot lock the patient out of retrying once
+            # the vendor recovers (TestClient runs background tasks before
+            # returning, so the burn is already committed here).
+            second = self.client.post("/auth/otp/request", json={"phone": self.phone})
+            self.assertEqual(second.status_code, 202)
+            self.assertNotIn("vendor exploded", second.text)
+            self.assertTrue(second.json()["dev_otp"])
 
 
 class FakeProviderEnvGateTests(unittest.TestCase):

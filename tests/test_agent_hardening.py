@@ -2,7 +2,8 @@
 
 import os
 import unittest
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import jdatetime
 from langchain_core.messages import AIMessage
@@ -26,6 +27,7 @@ from app.models.doctor_schedule import DoctorSchedule
 from app.models.patient import Patient
 from app.models.user import User
 from app.utils.date_utils import gregorian_to_jalali
+from app.utils.persian import to_persian_digits
 
 
 def _call(name, arguments, call_id="call-1"):
@@ -254,11 +256,15 @@ class GraphHardeningTests(unittest.IsolatedAsyncioTestCase):
         result = await self._invoke(create_initial_state(), model)
         self.assertEqual(result["last_tool_name"], "get_patient_appointments")
         self.assertTrue(result["last_tool_result"]["ok"])
-        ids = [
-            item["appointment_id"]
-            for item in result["last_tool_result"]["data"]
-        ]
-        self.assertEqual(ids, [self.linked_appointment.id])
+        rows = result["last_tool_result"]["data"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["appointment_time"], "10:00")
+        self.assertNotIn("appointment_id", rows[0])
+        self.assertNotIn("doctor_id", rows[0])
+        self.assertNotIn("service_id", rows[0])
+        self.assertNotIn("patient_id", rows[0])
+        # The forged foreign patient id was ignored in favor of the linked one.
+        self.assertNotEqual(rows[0]["appointment_time"], "11:00")
 
     async def test_patient_booking_ignores_foreign_patient_id(self):
         model = ScriptedModel(
@@ -375,6 +381,135 @@ class GraphHardeningTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result["pending_action"])
         self.assertEqual(result["route"], "finish")
 
+    async def _add_own_appointment(self, appointment_time):
+        async with self.factory() as db:
+            appointment = Appointment(
+                patient_id=self.patient.id,
+                doctor_id=self.doctor.id,
+                service_id=self.service.id,
+                appointment_time=appointment_time,
+                status="scheduled",
+            )
+            db.add(appointment)
+            await db.commit()
+            await db.refresh(appointment)
+        return appointment
+
+    async def test_patient_cancel_without_internal_id_resolves_own_row(self):
+        model = ScriptedModel(
+            _call("cancel_appointment", {}, "call-own-cancel"),
+            AIMessage(content="نوبت لغو شد."),
+        )
+        pending = await self._invoke(
+            create_initial_state(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": "نوبت من را لغو کن.",
+                    }
+                ]
+            ),
+            model,
+        )
+
+        self.assertTrue(pending["confirmation_required"])
+        self.assertEqual(
+            pending["pending_action"]["arguments"]["appointment_id"],
+            self.linked_appointment.id,
+        )
+        prompt = pending["confirmation_prompt"]
+        self.assertIn("دکتر سارا احمدی", prompt)
+        self.assertIn("معاینه اولیه دندانپزشکی", prompt)
+        self.assertNotIn("شماره", prompt)
+        self.assertNotRegex(prompt, r"نوبت\s+\d")
+
+        approved = await self._invoke(
+            pending,
+            model,
+            confirmation={
+                "token": pending["confirmation_token"],
+                "decision": "approved",
+            },
+        )
+        self.assertTrue(approved["last_tool_result"]["ok"])
+        self.assertNotIn("appointment_id", approved["last_tool_result"]["data"])
+        async with self.factory() as db:
+            stored = await db.get(Appointment, self.linked_appointment.id)
+            await db.refresh(stored)
+        self.assertEqual(stored.status, "cancelled")
+
+    async def test_patient_multiple_appointments_without_criteria_require_clarification(self):
+        second = await self._add_own_appointment(datetime(2026, 10, 10, 12))
+        model = ScriptedModel(_call("cancel_appointment", {}, "call-ambiguous-own"))
+
+        result = await self._invoke(
+            create_initial_state(
+                messages=[{"role": "user", "content": "لغوش کن."}]
+            ),
+            model,
+        )
+
+        self.assertFalse(result["confirmation_required"])
+        self.assertIsNone(result["confirmation_token"])
+        self.assertIsNone(result["pending_action"])
+        self.assertIn("چند نوبت", result["final_response"])
+        async with self.factory() as db:
+            first = await db.get(Appointment, self.linked_appointment.id)
+            other = await db.get(Appointment, second.id)
+            await db.refresh(first)
+            await db.refresh(other)
+        self.assertEqual(first.status, "scheduled")
+        self.assertEqual(other.status, "scheduled")
+
+    async def test_relative_tomorrow_selects_only_a_real_tomorrow_appointment(self):
+        tomorrow = await self._add_own_appointment(datetime(2026, 10, 11, 10))
+        model = ScriptedModel(
+            _call("cancel_appointment", {}, "call-tomorrow"),
+            AIMessage(content="نوبت فردا لغو شد."),
+        )
+
+        pending = await self._invoke(
+            create_initial_state(
+                messages=[{"role": "user", "content": "نوبت فردا را لغو کن."}]
+            ),
+            model,
+        )
+
+        self.assertTrue(pending["confirmation_required"])
+        self.assertEqual(
+            pending["pending_action"]["arguments"]["appointment_id"],
+            tomorrow.id,
+        )
+        async with self.factory() as db:
+            today_row = await db.get(Appointment, self.linked_appointment.id)
+            tomorrow_row = await db.get(Appointment, tomorrow.id)
+            await db.refresh(today_row)
+            await db.refresh(tomorrow_row)
+        self.assertEqual(today_row.status, "scheduled")
+        self.assertEqual(tomorrow_row.status, "scheduled")
+
+    async def test_relative_date_without_matching_appointment_does_not_retarget(self):
+        model = ScriptedModel(
+            _call("cancel_appointment", {}, "call-no-tomorrow"),
+            AIMessage(content="نوبتی برای فردا پیدا نشد."),
+        )
+
+        result = await self._invoke(
+            create_initial_state(
+                messages=[{"role": "user", "content": "نوبت فردا را لغو کن."}]
+            ),
+            model,
+        )
+
+        self.assertFalse(result["confirmation_required"])
+        self.assertIsNone(result["confirmation_token"])
+        self.assertIsNone(result["pending_action"])
+        self.assertIn("پیدا نشد", result["final_response"])
+        async with self.factory() as db:
+            stored = await db.get(Appointment, self.linked_appointment.id)
+            await db.refresh(stored)
+        self.assertEqual(stored.status, "scheduled")
+
     async def test_cancel_confirmation_uses_names_and_current_slot_data(self):
         model = ScriptedModel(
             _call(
@@ -394,8 +529,76 @@ class GraphHardeningTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotRegex(prompt, r"نوبت\s+\d")
         self.assertIn("دکتر سارا احمدی", prompt)
         self.assertIn("معاینه اولیه دندانپزشکی", prompt)
-        self.assertIn(jalali_date, prompt)
-        self.assertIn(jalali_time, prompt)
+        self.assertIn(to_persian_digits(jalali_date), prompt)
+        self.assertIn(to_persian_digits(jalali_time), prompt)
+
+    async def test_patient_reschedule_without_internal_id_resolves_source_from_text(self):
+        # The reschedule service validates the new slot against the real clinic
+        # clock, so derive the next scheduled day (Friday/Saturday) instead of
+        # pinning a fixed date that eventually becomes the past.
+        # The fixture schedules the doctor on Saturday (weekday 5) and Friday
+        # (weekday 4), matching the clinic's Saturday-based week.
+        real_now = datetime.now(ZoneInfo("Asia/Tehran"))
+        days_ahead = 1
+        while (real_now + timedelta(days=days_ahead)).weekday() not in (4, 5):
+            days_ahead += 1
+        target_day = (real_now + timedelta(days=days_ahead)).date()
+        target_datetime = datetime.combine(target_day, time(9))
+        target_date, _ = gregorian_to_jalali(target_datetime)
+
+        model = ScriptedModel(
+            _call(
+                "reschedule_appointment",
+                {
+                    "appointment_date": target_date,
+                    "appointment_time": "09:00",
+                },
+                "call-own-reschedule",
+            ),
+            AIMessage(content="نوبت منتقل شد."),
+        )
+
+        pending = await self._invoke(
+            create_initial_state(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            "نوبت امروز ساعت 10:00 را به "
+                            f"{target_date} ساعت 09:00 منتقل کن."
+                        ),
+                    }
+                ]
+            ),
+            model,
+        )
+
+        self.assertTrue(
+            pending["confirmation_required"],
+            pending.get("last_tool_error"),
+        )
+        self.assertEqual(
+            pending["pending_action"]["arguments"]["appointment_id"],
+            self.linked_appointment.id,
+        )
+        self.assertNotIn("appointment_id", pending["confirmation_prompt"])
+
+        approved = await self._invoke(
+            pending,
+            model,
+            confirmation={
+                "token": pending["confirmation_token"],
+                "decision": "approved",
+            },
+        )
+        self.assertTrue(
+            approved["last_tool_result"]["ok"],
+            approved["last_tool_result"].get("error"),
+        )
+        async with self.factory() as db:
+            stored = await db.get(Appointment, self.linked_appointment.id)
+            await db.refresh(stored)
+        self.assertEqual(stored.appointment_time, target_datetime)
 
     async def test_staff_may_authorize_booking_for_a_new_patient(self):
         receptionist = User(
@@ -429,6 +632,7 @@ class GraphHardeningTests(unittest.IsolatedAsyncioTestCase):
                 {"appointment_id": self.other_appointment.id},
                 "call-foreign-cancel",
             ),
+            AIMessage(content="این عملیات مجاز نیست."),
         )
         result = await self._invoke(create_initial_state(), model)
         self.assertFalse(result["confirmation_required"])
@@ -448,6 +652,7 @@ class GraphHardeningTests(unittest.IsolatedAsyncioTestCase):
                 },
                 "call-foreign-reschedule",
             ),
+            AIMessage(content="این عملیات مجاز نیست."),
         )
         result = await self._invoke(create_initial_state(), model)
         self.assertFalse(result["confirmation_required"])

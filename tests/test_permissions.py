@@ -18,8 +18,8 @@ from app.auth.permissions import (
     ensure_bookable_patient,
     ensure_patient_scope,
     linked_patient_id,
-    role_allows,
     require_action,
+    role_allows,
 )
 from app.errors import AppError
 from app.models.appointment import Appointment
@@ -162,15 +162,19 @@ class PatientScopeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await linked_patient_id(self.session, self.admin), None)
         self.assertEqual(await linked_patient_id(self.session, self.unlinked_user), None)
 
-    async def test_update_scope_matches_read_scope(self):
-        resolved = await ensure_patient_scope(
-            self.session, self.patient_b_user, self.patient_b.id, "patient:update"
-        )
-        self.assertEqual(resolved, self.patient_b.id)
-        with self.assertRaises(AppError):
+    async def test_patient_cannot_update_even_own_record(self):
+        # A patient account is read/booking-only; demographic edits and
+        # account linking are staff operations.
+        with self.assertRaises(AppError) as caught:
+            await ensure_patient_scope(
+                self.session, self.patient_b_user, self.patient_b.id, "patient:update"
+            )
+        self.assertEqual(caught.exception.code, "COMMON_FORBIDDEN")
+        with self.assertRaises(AppError) as caught:
             await ensure_patient_scope(
                 self.session, self.patient_a_user, self.patient_b.id, "patient:update"
             )
+        self.assertEqual(caught.exception.code, "COMMON_FORBIDDEN")
 
 
 class AppointmentAccessTests(unittest.IsolatedAsyncioTestCase):
@@ -327,7 +331,7 @@ class ToolAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             await authorize_tool_call(
                 self.session, actor, "search_dental_services", {}
             )
-        with self.assertRaises(AppError) as caught:
+        with self.assertRaises(AppError):
             await authorize_tool_call(self.session, None, "search_dental_services", {})
 
     async def test_receptionist_can_book_for_any_patient(self):

@@ -2,7 +2,6 @@ from sqlalchemy import Column, ForeignKey, Integer, Table, UniqueConstraint
 
 from app.models.base import Base
 
-
 doctor_dental_services = Table(
     "doctor_dental_services",
     Base.metadata,

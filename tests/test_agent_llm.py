@@ -4,8 +4,8 @@ from unittest.mock import patch
 from langchain_openai import ChatOpenAI
 
 from app.agent.llm import (
-    LLMConfig,
     PROVIDERS,
+    LLMConfig,
     create_chat_model,
     load_llm_config,
 )
@@ -144,11 +144,70 @@ class AgentLLMTests(unittest.TestCase):
     def test_registry_exports_only_named_tool_schemas(self):
         schemas = get_llm_tool_schemas()
         names = [schema["function"]["name"] for schema in schemas]
-        self.assertEqual(len(names), 8)
+        # Without an explicit role, admin-only and staff-only tools stay
+        # hidden (fail-closed); only shared clinic and feedback tools remain.
+        self.assertEqual(len(names), 10)
         self.assertIn("book_appointment", names)
         self.assertIn("search_dental_services", names)
         self.assertIn("find_nearest_appointments", names)
+        self.assertIn("submit_feedback", names)
+        # Staff report tools are hidden without a role...
+        self.assertNotIn("get_clinic_appointments_report", names)
+        self.assertNotIn("search_patients", names)
+        self.assertNotIn("get_doctor_day_plan", names)
+        self.assertNotIn("create_patient", names)
+        self.assertNotIn("update_patient", names)
+        self.assertNotIn("get_clinic_overview_stats", names)
+        self.assertNotIn("get_user_reports_summary", names)
+        self.assertNotIn("get_staff_directory", names)
+        self.assertNotIn("get_audit_trail", names)
         self.assertTrue(all(schema["type"] == "function" for schema in schemas))
+        # ...and the admin role unlocks the whole registry.
+        admin_names = [
+            schema["function"]["name"]
+            for schema in get_llm_tool_schemas(role="admin")
+        ]
+        self.assertEqual(len(admin_names), 20)
+        self.assertIn("get_clinic_overview_stats", admin_names)
+        self.assertIn("get_user_reports_summary", admin_names)
+        self.assertIn("get_staff_directory", admin_names)
+        self.assertIn("get_audit_trail", admin_names)
+        self.assertIn("create_patient", admin_names)
+        self.assertIn("update_patient", admin_names)
+        # Receptionist sessions see staff tools (record management included)
+        # but not admin-only ones; doctor sessions lack record management.
+        receptionist_names = [
+            schema["function"]["name"]
+            for schema in get_llm_tool_schemas(role="receptionist")
+        ]
+        self.assertEqual(len(receptionist_names), 16)
+        self.assertIn("create_patient", receptionist_names)
+        self.assertIn("update_patient", receptionist_names)
+        self.assertNotIn("get_clinic_overview_stats", receptionist_names)
+        doctor_names = [
+            schema["function"]["name"]
+            for schema in get_llm_tool_schemas(role="doctor")
+        ]
+        self.assertEqual(len(doctor_names), 14)
+        self.assertNotIn("create_patient", doctor_names)
+        self.assertNotIn("update_patient", doctor_names)
+        # Staff-only tools are withheld from patient-bound sessions entirely;
+        # the patient-facing weekly schedule tool stays available and the
+        # patient-only profile tool appears.
+        patient_names = [
+            schema["function"]["name"]
+            for schema in get_llm_tool_schemas(patient_bound=True)
+        ]
+        self.assertEqual(len(patient_names), 11)
+        self.assertIn("get_doctor_schedules", patient_names)
+        self.assertIn("get_my_profile", patient_names)
+        self.assertIn("submit_feedback", patient_names)
+        self.assertNotIn("get_clinic_appointments_report", patient_names)
+        self.assertNotIn("get_clinic_overview_stats", patient_names)
+        self.assertNotIn("search_patients", patient_names)
+        self.assertNotIn("get_patient_summary", patient_names)
+        self.assertNotIn("get_doctor_day_plan", patient_names)
+        self.assertNotIn("create_patient", patient_names)
 
     def test_openai_configuration_uses_generic_api_key(self):
         settings = load_llm_config(
@@ -189,9 +248,11 @@ class AgentLLMTests(unittest.TestCase):
         )
 
     def test_openai_provider_passes_validated_provider_settings(self):
-        with patch(
-            "app.agent.provider_factory.create_provider_model"
-        ) as factory:
+        # A developer .env may set a longer timeout for a slow provider; pin it
+        # here so the assertion stays independent of the local environment.
+        with patch.dict(
+            "os.environ", {"AGENT_LLM_TIMEOUT_SECONDS": "60"}
+        ), patch("app.agent.provider_factory.create_provider_model") as factory:
             create_chat_model(
                 LLMConfig(
                     provider="openai",
@@ -209,7 +270,7 @@ class AgentLLMTests(unittest.TestCase):
         self.assertEqual(provider_settings.model, "local-model")
         self.assertEqual(provider_settings.temperature, 0.25)
         self.assertEqual(provider_settings.timeout, 60.0)
-        self.assertEqual(provider_settings.max_retries, 0)
+        self.assertEqual(provider_settings.max_retries, 2)
         self.assertEqual(
             provider_settings.api_key.get_secret_value(),
             "test-openai-compatible-secret",

@@ -75,8 +75,13 @@ class DoctorServiceTests(unittest.IsolatedAsyncioTestCase):
         app = FastAPI()
         app.include_router(doctors_router)
 
+        session_factory = self.session_factory
+
         async def fake_db():
-            yield None
+            # A real session is required because the router appends an
+            # audit-log row for every doctor write.
+            async with session_factory() as session:
+                yield session
 
         async def fake_admin():
             return User(
@@ -120,6 +125,8 @@ class DoctorServiceTests(unittest.IsolatedAsyncioTestCase):
                 "specialty": "تخصص نمونه",
                 "phone": "09000000000",
                 "is_active": True,
+                "user_id": None,
+                "service_ids": [],
             },
         )
         create_doctor.assert_awaited_once()

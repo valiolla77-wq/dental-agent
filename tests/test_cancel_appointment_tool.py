@@ -12,6 +12,7 @@ from app.models.base import Base
 from app.models.dental_service import DentalService
 from app.models.doctor import Doctor
 from app.models.patient import Patient
+from app.models.user import User
 
 
 class CancelAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
@@ -22,6 +23,14 @@ class CancelAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
         self.session_factory = async_sessionmaker(
             self.engine,
             expire_on_commit=False,
+        )
+        self.actor = User(
+            id=1,
+            full_name="Cancel Probe",
+            phone="09900000004",
+            password_hash="unused",
+            role="receptionist",
+            is_active=True,
         )
         async with self.session_factory() as db:
             self.patient = Patient(
@@ -54,15 +63,14 @@ class CancelAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cancel_succeeds_with_minimal_structured_output(self):
         async with self.session_factory() as db:
-            result = await cancel_appointment(db, self.appointment.id)
+            result = await cancel_appointment(
+                db, self.appointment.id, actor=self.actor
+            )
 
         self.assertTrue(result.ok)
-        self.assertEqual(result.data.appointment_id, self.appointment.id)
         self.assertEqual(result.data.status, "cancelled")
-        self.assertEqual(
-            set(result.data.model_dump()),
-            {"appointment_id", "status"},
-        )
+        self.assertEqual(set(result.data.model_dump()), {"status"})
+        self.assertNotIn("appointment_id", result.model_dump())
         self.assertNotIn("reason", result.model_dump_json())
         async with self.session_factory() as db:
             stored = await db.get(Appointment, self.appointment.id)
@@ -70,7 +78,9 @@ class CancelAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_appointment_returns_catalog_error(self):
         async with self.session_factory() as db:
-            result = await cancel_appointment(db, 999)
+            result = await cancel_appointment(
+                db, 999, actor=self.actor
+            )
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "APPOINTMENT_NOT_FOUND")
@@ -81,7 +91,9 @@ class CancelAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
             stored = await db.get(Appointment, self.appointment.id)
             stored.status = "cancelled"
             await db.commit()
-            result = await cancel_appointment(db, self.appointment.id)
+            result = await cancel_appointment(
+                db, self.appointment.id, actor=self.actor
+            )
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "APPOINTMENT_ALREADY_CANCELLED")
@@ -92,14 +104,16 @@ class CancelAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
             stored = await db.get(Appointment, self.appointment.id)
             stored.status = "completed"
             await db.commit()
-            result = await cancel_appointment(db, self.appointment.id)
+            result = await cancel_appointment(
+                db, self.appointment.id, actor=self.actor
+            )
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "APPOINTMENT_NOT_CANCELLABLE")
 
     async def test_invalid_appointment_id_returns_validation_error(self):
         async with self.session_factory() as db:
-            result = await cancel_appointment(db, 0)
+            result = await cancel_appointment(db, 0, actor=self.actor)
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "COMMON_VALIDATION_ERROR")
@@ -119,11 +133,18 @@ class CancelAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
             "app.agent_tools.tools.appointment_service.cancel_appointment",
             new=service_call,
         ):
-            result = await cancel_appointment(fake_db, 123)
+            result = await cancel_appointment(
+                fake_db, 123, actor=self.actor
+            )
 
-        service_call.assert_awaited_once_with(fake_db, 123)
+        # The delegation now also forwards the actor's role for the
+        # notification fan-out; the appointment id stays the only positional.
+        service_call.assert_awaited_once_with(
+            fake_db, 123, actor_role=self.actor.role
+        )
         self.assertTrue(result.ok)
-        self.assertEqual(result.data.appointment_id, 123)
+        self.assertEqual(result.data.status, "cancelled")
+        self.assertNotIn("appointment_id", result.model_dump())
 
     async def test_database_error_is_generic_and_does_not_log_input(self):
         private_value = "appointment-db-private-value"
@@ -136,7 +157,9 @@ class CancelAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
                     "dental_agent.agent_tools",
                     level="ERROR",
                 ) as logs:
-                    result = await cancel_appointment(db, self.appointment.id)
+                    result = await cancel_appointment(
+                        db, self.appointment.id, actor=self.actor
+                    )
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "DATABASE_ERROR")
@@ -154,7 +177,9 @@ class CancelAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
                     "dental_agent.agent_tools",
                     level="ERROR",
                 ) as logs:
-                    result = await cancel_appointment(db, self.appointment.id)
+                    result = await cancel_appointment(
+                        db, self.appointment.id, actor=self.actor
+                    )
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "INTERNAL_ERROR")

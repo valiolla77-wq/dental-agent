@@ -18,7 +18,7 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
         self.factory = async_sessionmaker(self.engine, expire_on_commit=False)
         async with self.factory() as db:
             self.cleaning = DentalService(
-                name="جرم‌گیری نمایشی",
+                name="جرم‌گیری و پاکسازی",
                 description="پاکسازی جرم و پلاک دندان",
                 is_active=True,
             )
@@ -85,7 +85,7 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(query=query):
                 names = await self._names(query)
                 self.assertEqual(names[0], "ترمیم دندان")
-                self.assertNotIn("جرم‌گیری نمایشی", names)
+                self.assertNotIn("جرم‌گیری و پاکسازی", names)
 
     async def test_caries_phrases_prioritize_filling(self):
         for query in (
@@ -96,7 +96,7 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(query=query):
                 names = await self._names(query)
                 self.assertEqual(names[0], "ترمیم دندان")
-                self.assertNotIn("جرم‌گیری نمایشی", names)
+                self.assertNotIn("جرم‌گیری و پاکسازی", names)
                 self.assertNotIn("بلیچینگ", names)
 
     async def test_review_phrase_returns_exam_and_filling_only(self):
@@ -118,7 +118,7 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
                 names = await self._names(query)
                 self.assertEqual(names[0], "معاینه اولیه دندانپزشکی")
                 self.assertIn("ترمیم دندان", names)
-                self.assertNotIn("جرم‌گیری نمایشی", names)
+                self.assertNotIn("جرم‌گیری و پاکسازی", names)
                 self.assertNotIn("بلیچینگ", names)
 
     async def test_patient_style_caries_phrases_rank_filling_first(self):
@@ -133,7 +133,7 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
                     names[:2],
                     ["ترمیم دندان", "معاینه اولیه دندانپزشکی"],
                 )
-                self.assertNotIn("جرم‌گیری نمایشی", names)
+                self.assertNotIn("جرم‌گیری و پاکسازی", names)
                 self.assertNotIn("بلیچینگ", names)
 
     async def test_pain_phrase_keeps_exam_first_and_filling_relevant(self):
@@ -142,7 +142,7 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
             names[:2],
             ["معاینه اولیه دندانپزشکی", "ترمیم دندان"],
         )
-        self.assertNotIn("جرم‌گیری نمایشی", names)
+        self.assertNotIn("جرم‌گیری و پاکسازی", names)
         self.assertNotIn("بلیچینگ", names)
 
     async def test_ambiguous_damage_wording_stays_available_for_clarification(self):
@@ -166,7 +166,7 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
                 names = await self._names(query)
                 self.assertIn("معاینه اولیه دندانپزشکی", names)
                 self.assertIn("ترمیم دندان", names)
-                self.assertNotIn("جرم‌گیری نمایشی", names)
+                self.assertNotIn("جرم‌گیری و پاکسازی", names)
                 self.assertNotIn("بلیچینگ", names)
 
     async def test_long_model_style_phrase_returns_relevant_services(self):
@@ -177,7 +177,7 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
             names[:2],
             ["معاینه اولیه دندانپزشکی", "ترمیم دندان"],
         )
-        self.assertNotIn("جرم‌گیری نمایشی", names)
+        self.assertNotIn("جرم‌گیری و پاکسازی", names)
         self.assertNotIn("بلیچینگ", names)
 
     async def test_unrelated_query_returns_no_services(self):
@@ -186,7 +186,7 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_empty_or_generic_query_lists_active_services_only(self):
         expected = {
-            "جرم‌گیری نمایشی",
+            "جرم‌گیری و پاکسازی",
             "معاینه اولیه دندانپزشکی",
             "ترمیم دندان",
             "بلیچینگ",
@@ -200,7 +200,7 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
         # relevance scores or returns inactive rows.
         self.assertEqual(
             set(await self._names("نوبت", limit=2)),
-            {"جرم‌گیری نمایشی", "معاینه اولیه دندانپزشکی"},
+            {"جرم‌گیری و پاکسازی", "معاینه اولیه دندانپزشکی"},
         )
         self.assertEqual(
             len(await self._names("خدمات دندانپزشکی", limit=3)),
@@ -231,8 +231,8 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
         names = await self._names("پوسیدگی")
         self.assertNotIn("خدمت غیرفعال", names)
 
-    async def test_demo_seed_catalog_handles_patient_style_queries(self):
-        # These are exactly the three services created by scripts.seed_demo.py.
+    async def test_sample_seed_catalog_handles_patient_style_queries(self):
+        # These are exactly the three services created by scripts.seed_sample.py.
         # The fixture above also mirrors them, with an extra whitening row.
         cases = (
             (
@@ -247,8 +247,8 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 "جرم گیری",
-                "جرم‌گیری نمایشی",
-                {"جرم‌گیری نمایشی"},
+                "جرم‌گیری و پاکسازی",
+                {"جرم‌گیری و پاکسازی"},
             ),
             (
                 "پوسدگی",
@@ -269,13 +269,13 @@ class PersianServiceSearchTests(unittest.IsolatedAsyncioTestCase):
             names[:2],
             ["معاینه اولیه دندانپزشکی", "ترمیم دندان"],
         )
-        self.assertNotIn("جرم‌گیری نمایشی", names)
+        self.assertNotIn("جرم‌گیری و پاکسازی", names)
         self.assertNotIn("بلیچینگ", names)
 
     async def test_spelling_typo_does_not_fall_back_to_unrelated_services(self):
         names = await self._names("پوسدگی دندن")
         self.assertEqual(names[0], "ترمیم دندان")
-        self.assertNotIn("جرم‌گیری نمایشی", names)
+        self.assertNotIn("جرم‌گیری و پاکسازی", names)
         self.assertNotIn("بلیچینگ", names)
         self.assertEqual(await self._names("بیمه"), [])
 

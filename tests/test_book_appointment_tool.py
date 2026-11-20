@@ -7,13 +7,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agent_tools.tools import book_appointment
-from app.errors import AppError
 from app.models.appointment import Appointment
 from app.models.base import Base
 from app.models.dental_service import DentalService
 from app.models.doctor import Doctor
 from app.models.doctor_schedule import DoctorSchedule
 from app.models.patient import Patient
+from app.models.user import User
 from app.services import appointment_service
 from app.utils.date_utils import gregorian_to_jalali
 
@@ -26,6 +26,14 @@ class BookAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
         self.session_factory = async_sessionmaker(
             self.engine,
             expire_on_commit=False,
+        )
+        self.actor = User(
+            id=1,
+            full_name="Booking Probe",
+            phone="09900000003",
+            password_hash="unused",
+            role="receptionist",
+            is_active=True,
         )
         target = datetime.combine(date(2026, 10, 10), time.min)
         self.appointment_date = gregorian_to_jalali(target)[0]
@@ -102,32 +110,34 @@ class BookAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
             "patient_id": self.patient.id,
         }
         args.update(overrides)
-        return await book_appointment(db, **args)
+        return await book_appointment(db, actor=self.actor, **args)
 
     async def test_successful_booking_with_existing_patient_is_minimal(self):
         async with self.session_factory() as db:
             result = await self._book(db, reason="توضیح خصوصی نباید برگردد")
 
         self.assertTrue(result.ok)
-        self.assertEqual(result.data.patient_id, self.patient.id)
-        self.assertEqual(result.data.doctor_id, self.doctor.id)
-        self.assertEqual(result.data.service_id, self.service.id)
-        self.assertEqual(result.data.appointment_time, f"{self.appointment_date} 10:30")
+        self.assertEqual(
+            result.data.appointment_time, f"{self.appointment_date} 10:30"
+        )
         self.assertEqual(result.data.status, "scheduled")
-        self.assertGreater(result.data.appointment_id, 0)
         self.assertEqual(
             set(result.data.model_dump()),
-            {
-                "appointment_id",
-                "patient_id",
-                "doctor_id",
-                "service_id",
-                "appointment_time",
-                "status",
-            },
+            {"appointment_time", "status"},
         )
+        self.assertNotIn("appointment_id", result.model_dump())
+        self.assertNotIn("patient_id", result.model_dump())
         self.assertNotIn("reason", result.data.model_dump())
         self.assertNotIn(self.patient.national_id, result.model_dump_json())
+        async with self.session_factory() as db:
+            stored = await db.scalar(
+                select(Appointment).where(
+                    Appointment.patient_id == self.patient.id,
+                    Appointment.doctor_id == self.doctor.id,
+                    Appointment.service_id == self.service.id,
+                )
+            )
+        self.assertIsNotNone(stored)
 
     async def test_existing_patient_is_found_by_national_id(self):
         async with self.session_factory() as db:
@@ -140,7 +150,14 @@ class BookAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertTrue(result.ok)
-        self.assertEqual(result.data.patient_id, self.patient.id)
+        async with self.session_factory() as db:
+            stored = await db.scalar(
+                select(Appointment).where(
+                    Appointment.patient_id == self.patient.id,
+                    Appointment.doctor_id == self.doctor.id,
+                )
+            )
+        self.assertIsNotNone(stored)
 
     async def test_new_patient_is_created_by_booking_service(self):
         async with self.session_factory() as db:
@@ -153,11 +170,17 @@ class BookAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertTrue(result.ok)
+        self.assertNotIn("patient_id", result.model_dump())
         async with self.session_factory() as db:
             patient = await db.scalar(
                 select(Patient).where(Patient.national_id == "0000000001")
             )
-        self.assertEqual(result.data.patient_id, patient.id)
+            appointment = await db.scalar(
+                select(Appointment).where(
+                    Appointment.patient_id == patient.id
+                )
+            )
+        self.assertIsNotNone(appointment)
 
     async def test_already_booked_slot_returns_catalog_error(self):
         async with self.session_factory() as db:

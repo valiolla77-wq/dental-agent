@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import AppError
 from app.models.appointment import Appointment
-from app.services import appointment_service, patient_service
+from app.services import appointment_service, notification_service, patient_service
 
 
 async def create_booking(
@@ -29,6 +29,7 @@ async def create_booking(
     phone: str | None = None,
     reason: str | None = None,
     now: datetime | None = None,
+    actor_role: str | None = None,
 ) -> Appointment:
     """Reuse or create a patient and book atomically using domain services."""
     try:
@@ -64,6 +65,11 @@ async def create_booking(
             reason=reason,
             commit=False,
             now=now,
+        )
+
+        # Same-transaction inbox notification (best effort, flush only).
+        await notification_service.notify_appointment_event(
+            db, appointment, event="booked", actor_role=actor_role
         )
 
         # Commit the whole booking (optional new patient + appointment) once.

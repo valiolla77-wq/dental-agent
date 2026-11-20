@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, field_validator, model_validator
 
 
@@ -62,3 +64,35 @@ class AppointmentResponse(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+
+class AppointmentDetailResponse(BaseModel):
+    """Listing view enriched with readable names resolved server-side.
+
+    Internal row ids stay available to authorized callers for navigation,
+    while the UI renders the names and Jalali date/time instead.
+    """
+
+    id: int
+    patient_id: int
+    doctor_id: int
+    service_id: int
+    appointment_date: str
+    appointment_time: str
+    status: str
+    reason: str | None
+    patient_name: str
+    doctor_name: str
+    service_name: str
+    checked_in_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    queue_number: int | None = None
+
+
+class WorklistItemResponse(AppointmentDetailResponse):
+    """One row of the front-desk worklist for a single clinic day."""
+
+    patient_phone: str
+    is_late: bool = False
+    waiting_minutes: int | None = None

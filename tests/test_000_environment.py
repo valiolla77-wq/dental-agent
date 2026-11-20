@@ -9,7 +9,6 @@ changing the production database default.
 import os
 import unittest
 
-
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("SQL_ECHO", "false")
 os.environ.setdefault("JWT_SECRET", "test-secret-key-for-testing-only-32-chars-long")

@@ -11,7 +11,7 @@ from app.schemas.dental_service import (
 )
 from app.schemas.doctor import DoctorPublicResponse
 from app.services import dental_service_service
-
+from app.services.audit_service import record_audit
 
 router = APIRouter(
     prefix="/dental-services",
@@ -23,13 +23,21 @@ router = APIRouter(
 async def create_dental_service(
     service: DentalServiceCreate,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ):
     created = await dental_service_service.create_dental_service(
         db,
         service.name,
         service.description,
     )
+    await record_audit(
+        db,
+        actor=admin,
+        action="service.create",
+        target_label=f"{created.name} (خدمت #{created.id})",
+        detail={"service_id": int(created.id)},
+    )
+    await db.commit()
     return DentalServiceResponse.model_validate(created)
 
 
@@ -74,7 +82,7 @@ async def update_dental_service(
     service_id: int,
     service_data: DentalServiceUpdate,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ):
     service = await dental_service_service.update_dental_service(
         db=db,
@@ -83,6 +91,14 @@ async def update_dental_service(
         description=service_data.description,
         is_active=service_data.is_active,
     )
+    await record_audit(
+        db,
+        actor=admin,
+        action="service.update",
+        target_label=f"{service.name} (خدمت #{service.id})",
+        detail={"service_id": int(service.id), "is_active": bool(service.is_active)},
+    )
+    await db.commit()
     return DentalServiceResponse.model_validate(service)
 
 
@@ -90,12 +106,20 @@ async def update_dental_service(
 async def delete_dental_service(
     service_id: int,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ):
     deleted_id = await dental_service_service.delete_dental_service(
         db,
         service_id,
     )
+    await record_audit(
+        db,
+        actor=admin,
+        action="service.delete",
+        target_label=f"خدمت #{deleted_id}",
+        detail={"service_id": deleted_id},
+    )
+    await db.commit()
     return {
         "message": "خدمت دندانپزشکی با موفقیت حذف شد.",
         "service_id": deleted_id,

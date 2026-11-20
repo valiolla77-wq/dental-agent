@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -234,6 +234,7 @@ async def reschedule_appointment(
     appointment_time: str,
     *,
     now: datetime | None = None,
+    actor_role: str | None = None,
 ) -> Appointment:
     """Move a scheduled appointment atomically without creating history.
 
@@ -261,6 +262,14 @@ async def reschedule_appointment(
         )
         appointment.appointment_time = new_datetime
         await db.flush()
+
+        # Same-transaction inbox notification (best effort, flush only).
+        from app.services import notification_service
+
+        await notification_service.notify_appointment_event(
+            db, appointment, event="rescheduled", actor_role=actor_role
+        )
+
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -291,9 +300,329 @@ async def get_patient_appointments(
     return list(result.scalars().all())
 
 
+APPOINTMENT_LIST_LIMIT = 200
+_APPOINTMENT_STATUSES = frozenset(
+    {"scheduled", "in_progress", "completed", "cancelled", "no_show"}
+)
+# Statuses that still belong to the active patient journey. The unique slot
+# index deliberately guards only ``scheduled``: once a patient is checked in
+# the booked minute is in the past and no longer needs reservation.
+_ACTIVE_FLOW_STATUSES = frozenset({"scheduled", "in_progress"})
+
+
+def _appointment_detail(
+    row: tuple[Appointment, Patient, Doctor, DentalService],
+) -> dict[str, object]:
+    """Enrich one joined row with readable names and Jalali date/time."""
+    appointment, patient, doctor, service = row
+    appointment_date, appointment_time = gregorian_to_jalali(
+        appointment.appointment_time
+    )
+    return {
+        "id": appointment.id,
+        "patient_id": appointment.patient_id,
+        "doctor_id": appointment.doctor_id,
+        "service_id": appointment.service_id,
+        "appointment_date": appointment_date,
+        "appointment_time": appointment_time,
+        "status": appointment.status,
+        "reason": appointment.reason,
+        "patient_name": patient.full_name,
+        "doctor_name": doctor.full_name,
+        "service_name": service.name,
+        "checked_in_at": appointment.checked_in_at,
+        "started_at": appointment.started_at,
+        "completed_at": appointment.completed_at,
+        "queue_number": appointment.queue_number,
+    }
+
+
+async def get_appointments_detail(
+    db: AsyncSession,
+    *,
+    patient_id: int | None = None,
+    patient_ids: list[int] | None = None,
+    doctor_id: int | None = None,
+    appointment_date: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, object]]:
+    """List appointments joined with readable names, newest first.
+
+    Filters are plain equality checks on real database columns; the date
+    filter accepts a Jalali day and matches the whole Tehran wall-clock day.
+    Caller authorization (role/ownership scoping) happens before this call,
+    so this function is presentation-only enrichment. Results are capped to
+    keep responses bounded.
+    """
+    if status is not None and status not in _APPOINTMENT_STATUSES:
+        raise AppError("COMMON_VALIDATION_ERROR")
+
+    day_range: tuple[datetime, datetime] | None = None
+    if appointment_date is not None:
+        try:
+            day_start = jalali_to_gregorian(appointment_date, "00:00")
+        except ValueError as exc:
+            raise AppError("APPOINTMENT_INVALID_DATE") from exc
+        day_range = (day_start, day_start + timedelta(days=1))
+
+    query = (
+        select(Appointment, Patient, Doctor, DentalService)
+        .join(Patient, Appointment.patient_id == Patient.id)
+        .join(Doctor, Appointment.doctor_id == Doctor.id)
+        .join(DentalService, Appointment.service_id == DentalService.id)
+    )
+    if patient_id is not None:
+        query = query.where(Appointment.patient_id == patient_id)
+    if patient_ids is not None:
+        query = query.where(Appointment.patient_id.in_(patient_ids))
+    if doctor_id is not None:
+        query = query.where(Appointment.doctor_id == doctor_id)
+    if status is not None:
+        query = query.where(Appointment.status == status)
+    if day_range is not None:
+        query = query.where(
+            Appointment.appointment_time >= day_range[0],
+            Appointment.appointment_time < day_range[1],
+        )
+    result = await db.execute(
+        query.order_by(
+            Appointment.appointment_time.desc(),
+            Appointment.id.desc(),
+        ).limit(APPOINTMENT_LIST_LIMIT)
+    )
+    return [_appointment_detail(row) for row in result.all()]
+
+
+def _day_bounds(target_date: date) -> tuple[datetime, datetime]:
+    start = datetime.combine(target_date, datetime.min.time())
+    return start, start + timedelta(days=1)
+
+
+async def get_day_worklist(
+    db: AsyncSession,
+    appointment_date: str,
+    *,
+    doctor_id: int | None = None,
+    now: datetime | None = None,
+) -> list[dict[str, object]]:
+    """Today's operational worklist in slot-time order.
+
+    Unlike the historical listing this returns the front-desk timestamps plus
+    the patient phone, which the reception screen needs without an extra
+    request per row. Ordering by queue number is a per-doctor decision made by
+    the reception view, because each room counts its own arrivals.
+    """
+    try:
+        day_start = jalali_to_gregorian(appointment_date, "00:00")
+    except ValueError as exc:
+        raise AppError("APPOINTMENT_INVALID_DATE") from exc
+    day_end = day_start + timedelta(days=1)
+
+    query = (
+        select(Appointment, Patient, Doctor, DentalService)
+        .join(Patient, Appointment.patient_id == Patient.id)
+        .join(Doctor, Appointment.doctor_id == Doctor.id)
+        .join(DentalService, Appointment.service_id == DentalService.id)
+        .where(
+            Appointment.appointment_time >= day_start,
+            Appointment.appointment_time < day_end,
+        )
+    )
+    if doctor_id is not None:
+        query = query.where(Appointment.doctor_id == doctor_id)
+
+    rows = (
+        await db.execute(
+            query.order_by(
+                Appointment.appointment_time.asc(),
+                Appointment.id.asc(),
+            )
+        )
+    ).all()
+
+    current = clinic_now(now)
+    items: list[dict[str, object]] = []
+    for appointment, patient, doctor, service in rows:
+        appointment_date_value, appointment_time_value = gregorian_to_jalali(
+            appointment.appointment_time
+        )
+        items.append(
+            {
+                "id": appointment.id,
+                "patient_id": appointment.patient_id,
+                "patient_name": patient.full_name,
+                "patient_phone": patient.phone,
+                "doctor_id": appointment.doctor_id,
+                "doctor_name": doctor.full_name,
+                "service_id": appointment.service_id,
+                "service_name": service.name,
+                "appointment_date": appointment_date_value,
+                "appointment_time": appointment_time_value,
+                "status": appointment.status,
+                "reason": appointment.reason,
+                "checked_in_at": appointment.checked_in_at,
+                "started_at": appointment.started_at,
+                "completed_at": appointment.completed_at,
+                "queue_number": appointment.queue_number,
+                "is_late": appointment.status == "scheduled"
+                and appointment.checked_in_at is None
+                and appointment.appointment_time < current,
+                "waiting_minutes": (
+                    max(
+                        0,
+                        int(
+                            (
+                                current - appointment.checked_in_at
+                            ).total_seconds()
+                            // 60
+                        ),
+                    )
+                    if appointment.checked_in_at is not None
+                    and appointment.started_at is None
+                    and appointment.status == "scheduled"
+                    else None
+                ),
+            }
+        )
+    return items
+
+
+async def _load_today_appointment(
+    db: AsyncSession,
+    appointment_id: int,
+    now: datetime | None,
+) -> Appointment:
+    appointment = await db.get(Appointment, appointment_id)
+    if appointment is None:
+        raise AppError("APPOINTMENT_NOT_FOUND")
+    if appointment.appointment_time.date() != clinic_now(now).date():
+        raise AppError("APPOINTMENT_NOT_TODAY")
+    return appointment
+
+
+async def _next_queue_number(
+    db: AsyncSession,
+    day: date,
+    doctor_id: int,
+) -> int:
+    """Next arrival number for one doctor's room on one day.
+
+    Each doctor runs their own queue, so two rooms never share numbers: a
+    patient is "number 2 of Dr. A" and "number 1 of Dr. B" can coexist in the
+    same clinic day, which is how rooms are actually called in.
+    """
+    day_start, day_end = _day_bounds(day)
+    current_max = await db.scalar(
+        select(func.max(Appointment.queue_number)).where(
+            Appointment.appointment_time >= day_start,
+            Appointment.appointment_time < day_end,
+            Appointment.doctor_id == doctor_id,
+        )
+    )
+    return int(current_max or 0) + 1
+
+
+async def check_in_appointment(
+    db: AsyncSession,
+    appointment_id: int,
+    *,
+    now: datetime | None = None,
+) -> Appointment:
+    """Register the patient's arrival and assign the doctor's daily queue number."""
+    current = clinic_now(now)
+    appointment = await _load_today_appointment(db, appointment_id, current)
+    if appointment.status in ("cancelled", "completed", "no_show"):
+        raise AppError("APPOINTMENT_FLOW_INVALID")
+    if appointment.checked_in_at is not None:
+        return appointment
+
+    appointment.checked_in_at = current
+    if appointment.queue_number is None:
+        appointment.queue_number = await _next_queue_number(
+            db, current.date(), appointment.doctor_id
+        )
+    await db.commit()
+    await db.refresh(appointment)
+    return appointment
+
+
+async def start_appointment(
+    db: AsyncSession,
+    appointment_id: int,
+    *,
+    now: datetime | None = None,
+) -> Appointment:
+    """Move a checked-in patient into the treatment room."""
+    current = clinic_now(now)
+    appointment = await _load_today_appointment(db, appointment_id, current)
+    if appointment.status not in _ACTIVE_FLOW_STATUSES:
+        raise AppError("APPOINTMENT_FLOW_INVALID")
+    if appointment.checked_in_at is None:
+        # Starting treatment implies the patient is present.
+        appointment.checked_in_at = current
+        if appointment.queue_number is None:
+            appointment.queue_number = await _next_queue_number(
+                db, current.date(), appointment.doctor_id
+            )
+    if appointment.started_at is None:
+        appointment.started_at = current
+    appointment.status = "in_progress"
+    await db.commit()
+    await db.refresh(appointment)
+    return appointment
+
+
+async def complete_appointment(
+    db: AsyncSession,
+    appointment_id: int,
+    *,
+    now: datetime | None = None,
+) -> Appointment:
+    """Close the visit after treatment is finished."""
+    current = clinic_now(now)
+    appointment = await _load_today_appointment(db, appointment_id, current)
+    if appointment.status in ("cancelled", "completed", "no_show"):
+        raise AppError("APPOINTMENT_FLOW_INVALID")
+    if appointment.checked_in_at is None:
+        appointment.checked_in_at = current
+        if appointment.queue_number is None:
+            appointment.queue_number = await _next_queue_number(
+                db, current.date(), appointment.doctor_id
+            )
+    if appointment.started_at is None:
+        appointment.started_at = current
+    appointment.completed_at = current
+    appointment.status = "completed"
+    await db.commit()
+    await db.refresh(appointment)
+    return appointment
+
+
+async def mark_no_show(
+    db: AsyncSession,
+    appointment_id: int,
+    *,
+    now: datetime | None = None,
+) -> Appointment:
+    """Record that the patient never arrived."""
+    current = clinic_now(now)
+    appointment = await _load_today_appointment(db, appointment_id, current)
+    if appointment.status in ("cancelled", "completed", "no_show"):
+        raise AppError("APPOINTMENT_FLOW_INVALID")
+    if appointment.checked_in_at is not None:
+        raise AppError("APPOINTMENT_FLOW_INVALID")
+    appointment.status = "no_show"
+    appointment.completed_at = current
+    await db.commit()
+    await db.refresh(appointment)
+    return appointment
+
+
 async def cancel_appointment(
     db: AsyncSession,
     appointment_id: int,
+    *,
+    actor_role: str | None = None,
 ) -> Appointment:
     """Cancel a scheduled appointment and reject every other state."""
     appointment = await db.get(Appointment, appointment_id)
@@ -305,6 +634,14 @@ async def cancel_appointment(
         raise AppError("APPOINTMENT_NOT_CANCELLABLE")
 
     appointment.status = "cancelled"
+
+    # Same-transaction inbox notification (best effort, flush only).
+    from app.services import notification_service
+
+    await notification_service.notify_appointment_event(
+        db, appointment, event="cancelled", actor_role=actor_role
+    )
+
     await db.commit()
     await db.refresh(appointment)
     return appointment

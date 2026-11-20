@@ -9,6 +9,26 @@ from app.models.doctor import Doctor
 from app.services.dental_service_service import set_doctor_services
 
 
+async def list_doctors(
+    db: AsyncSession,
+    *,
+    active_only: bool = True,
+) -> list[Doctor]:
+    """Catalog listing for authenticated users; no contact data is returned."""
+    query = select(Doctor).order_by(Doctor.id)
+    if active_only:
+        query = query.where(Doctor.is_active.is_(True))
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def get_doctor(db: AsyncSession, doctor_id: int) -> Doctor:
+    doctor = await db.get(Doctor, doctor_id)
+    if doctor is None:
+        raise AppError("DOCTOR_NOT_FOUND")
+    return doctor
+
+
 async def create_doctor(
     db: AsyncSession,
     full_name: str,

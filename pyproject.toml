@@ -1,0 +1,23 @@
+[project]
+name = "dental-agent"
+version = "0.2.0"
+description = "Dental clinic management system with a Persian agentic assistant"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning:langchain_core.*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["webapp", "web", "demo"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+# FastAPI's Depends(...) in defaults is the framework's idiom.
+ignore = ["B008", "UP046", "UP047"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B", "UP"]

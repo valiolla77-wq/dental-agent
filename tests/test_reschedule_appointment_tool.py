@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agent_tools.tools import reschedule_appointment
-from app.errors import AppError, ERROR_CATALOG
+from app.errors import ERROR_CATALOG
 from app.models.appointment import Appointment
 from app.models.base import Base
 from app.models.dental_service import DentalService
@@ -15,6 +15,7 @@ from app.models.doctor import Doctor
 from app.models.doctor_dental_service import doctor_dental_services
 from app.models.doctor_schedule import DoctorSchedule
 from app.models.patient import Patient
+from app.models.user import User
 from app.services import appointment_service
 from app.utils.date_utils import gregorian_to_jalali
 
@@ -26,6 +27,14 @@ class RescheduleAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
             await connection.run_sync(Base.metadata.create_all)
         self.session_factory = async_sessionmaker(
             self.engine, expire_on_commit=False
+        )
+        self.actor = User(
+            id=1,
+            full_name="Reschedule Probe",
+            phone="09900000005",
+            password_hash="unused",
+            role="receptionist",
+            is_active=True,
         )
         self.target_date = date(2026, 10, 10)  # Saturday
         self.jalali_date = gregorian_to_jalali(
@@ -96,6 +105,7 @@ class RescheduleAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
                 self.appointment.id if appointment_id is None else appointment_id,
                 self.jalali_date if day is None else day,
                 clock,
+                actor=self.actor,
             )
 
     async def _stored_appointment(self):
@@ -108,16 +118,13 @@ class RescheduleAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.ok)
         self.assertEqual(
             set(result.data.model_dump()),
-            {
-                "appointment_id", "patient_id", "doctor_id", "service_id",
-                "appointment_time", "status",
-            },
+            {"appointment_time", "status"},
         )
-        self.assertEqual(result.data.appointment_id, self.appointment.id)
-        self.assertEqual(result.data.patient_id, self.patient.id)
-        self.assertEqual(result.data.doctor_id, self.doctor.id)
-        self.assertEqual(result.data.service_id, self.service.id)
-        self.assertEqual(result.data.appointment_time, f"{self.jalali_date} 11:00")
+        self.assertNotIn("appointment_id", result.model_dump())
+        self.assertNotIn("patient_id", result.model_dump())
+        self.assertEqual(
+            result.data.appointment_time, f"{self.jalali_date} 11:00"
+        )
         self.assertEqual(result.data.status, "scheduled")
         stored = await self._stored_appointment()
         self.assertEqual(stored.appointment_time, datetime(2026, 10, 10, 11))
@@ -230,9 +237,15 @@ class RescheduleAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
             "app.agent_tools.tools.appointment_service.reschedule_appointment",
             new=service_call,
         ):
-            result = await reschedule_appointment(fake_db, 123, self.jalali_date, "11:00")
+            result = await reschedule_appointment(
+                fake_db, 123, self.jalali_date, "11:00", actor=self.actor
+            )
         service_call.assert_awaited_once_with(
-            fake_db, 123, self.jalali_date, "11:00"
+            fake_db,
+            123,
+            self.jalali_date,
+            "11:00",
+            actor_role=self.actor.role,
         )
         self.assertTrue(result.ok)
 
@@ -254,7 +267,11 @@ class RescheduleAppointmentToolTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(side_effect=SQLAlchemyError("private failure detail")),
             ):
                 result = await reschedule_appointment(
-                    db, self.appointment.id, self.jalali_date, "11:00"
+                    db,
+                    self.appointment.id,
+                    self.jalali_date,
+                    "11:00",
+                    actor=self.actor,
                 )
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "DATABASE_ERROR")

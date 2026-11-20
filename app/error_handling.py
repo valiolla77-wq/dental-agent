@@ -11,8 +11,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.errors import AppError, ERROR_CATALOG
-
+from app.errors import ERROR_CATALOG, AppError
+from app.logging_buffer import install_log_buffer
 
 logger = logging.getLogger("dental_agent.errors")
 request_id_context: ContextVar[str | None] = ContextVar(
@@ -169,9 +169,12 @@ async def database_error_handler(
     request: Request, exc: SQLAlchemyError
 ) -> JSONResponse:
     request_id = _request_id(request)
-    logger.exception(
-        "Database operation failed",
-        exc_info=(type(exc), exc, exc.__traceback__),
+    # SQLAlchemy exception messages can embed bound SQL parameters (patient
+    # identity, password hashes, tokens). Log only the exception class and the
+    # request id; full details stay out of the application log.
+    logger.error(
+        "Database operation failed (%s); details omitted",
+        type(exc).__name__,
         extra={"request_id": request_id, "error_code": "DATABASE_ERROR"},
     )
     return _error_response("DATABASE_ERROR", request_id)
@@ -182,15 +185,16 @@ async def internal_error_handler(request: Request, exc: Exception) -> JSONRespon
         return await database_error_handler(request, exc)
 
     request_id = _request_id(request)
-    logger.exception(
-        "Unhandled application exception",
-        exc_info=(type(exc), exc, exc.__traceback__),
+    logger.error(
+        "Unhandled application exception (%s); details omitted",
+        type(exc).__name__,
         extra={"request_id": request_id, "error_code": "INTERNAL_ERROR"},
     )
     return _error_response("INTERNAL_ERROR", request_id)
 
 
 def configure_error_handling(app: FastAPI) -> None:
+    install_log_buffer()
     app.add_middleware(RequestIdMiddleware)
     app.add_exception_handler(AppError, app_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)

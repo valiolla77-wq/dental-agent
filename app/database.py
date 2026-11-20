@@ -1,13 +1,21 @@
-from collections.abc import AsyncGenerator
 import os
+from collections.abc import AsyncGenerator
 
+from dotenv import load_dotenv
 from sqlalchemy import inspect, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.models.appointment import Appointment
-from app.models.base import Base
-from app.db_migration import run_additive_migrations
+# Load the project's ``.env`` before any module reads configuration. The
+# database module is imported by every entry point (server, scripts, tests),
+# so this is the earliest shared point that still lets DATABASE_URL,
+# JWT_SECRET and provider settings come from ``.env`` as documented in the
+# README. ``load_dotenv`` never overrides variables already present in the
+# real process environment, so deployment/test overrides keep priority.
+load_dotenv()
+
+from app.db_migration import run_additive_migrations  # noqa: E402
+from app.models.appointment import Appointment  # noqa: E402
+from app.models.base import Base  # noqa: E402
 
 # Allow DATABASE_URL to be configured via environment variable for testing
 # Default to the real database file for production
@@ -63,6 +71,21 @@ async def ensure_appointment_service_id_required(conn) -> None:
     await conn.run_sync(
         lambda sync_conn: Appointment.__table__.create(sync_conn)
     )
+
+
+async def database_is_ready() -> bool:
+    """Return True when a trivial query succeeds on the configured database.
+
+    Used by ``/health/ready`` and the admin system-health page. The exception is
+    swallowed on purpose: readiness must return a status, never a 500, and the
+    error text can contain the database URL or credentials.
+    """
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
 
 
 async def init_db():

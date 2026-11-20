@@ -17,11 +17,15 @@ class DoctorUpdate(BaseModel):
 
 
 class DoctorResponse(BaseModel):
+    """Admin management view: contact data plus account/service linkage."""
+
     id: int
     full_name: str
     specialty: str
     phone: str
     is_active: bool
+    user_id: int | None = None
+    service_ids: list[int] = Field(default_factory=list)
 
     model_config = {
         "from_attributes": True

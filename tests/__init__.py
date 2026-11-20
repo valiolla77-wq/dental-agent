@@ -19,3 +19,16 @@ if "DATABASE_URL" not in os.environ:
 # Ensure consistent test defaults for JWT as well.
 os.environ.setdefault("JWT_SECRET", "test-secret-key-for-testing-only-32-chars-long")
 os.environ.setdefault("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+
+# Hermetic defaults: tests must not depend on a developer's local .env.
+os.environ.setdefault("APP_ENV", "test")
+os.environ.setdefault("OTP_PROVIDER", "fake")
+os.environ.setdefault(
+    "CONFIRMATION_HMAC_SECRET", "test-confirmation-hmac-secret-32-chars-long"
+)
+# Abuse limits are exercised by dedicated tests; keep them out of the way of
+# the many tests that legitimately reuse one phone/user.
+os.environ.setdefault("OTP_PHONE_DAILY_LIMIT", "100000")
+os.environ.setdefault("OTP_GLOBAL_HOURLY_LIMIT", "100000")
+os.environ.setdefault("CHAT_RATE_LIMIT_REQUESTS", "100000")
+os.environ.setdefault("FEEDBACK_RATE_LIMIT_REQUESTS", "100000")

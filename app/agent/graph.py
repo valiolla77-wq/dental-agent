@@ -2,850 +2,336 @@
 
 import json
 import logging
-import re
-from datetime import datetime
-from typing import Any, TypedDict
+from typing import Any
 from uuid import uuid4
 
-from langchain_core.messages import (
-    AIMessage,
-    BaseMessage,
-    HumanMessage,
-    SystemMessage,
-    ToolMessage,
-)
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from pydantic import ValidationError
-from sqlalchemy import inspect as sa_inspect, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.appointment_selection import (
-    normalize_text,
     resolve_appointment_target,
 )
-from app.agent.confirmations import ConfirmationDecision, confirmation_store
-from app.agent.llm import ToolCallingChatModel, create_chat_model
-from app.agent.prompts import build_system_prompt
+from app.agent.confirmation_text import _describe_action, _target_selection_text
+from app.agent.confirmations import confirmation_store
+from app.agent.context import AGENT_RECURSION_LIMIT, MAX_AGENT_STEPS, AgentContext
+from app.agent.llm import create_chat_model
+from app.agent.messages import (
+    _append_message,
+    _latest_user_text,
+    _message_content_to_text,
+    _messages_for_model,
+    safe_tool_call_for_history,
+)
+from app.agent.outcomes import (
+    _catalog_error,
+    _finish_clarification,
+    _finish_error,
+    _finish_rejected_confirmation,
+    _finish_step_limit,
+    _provider_failure_code,
+    _sanitize_write_final_response,
+    _successful_write_fallback,
+)
+from app.agent.patient_binding import _is_patient_actor, _prepare_patient_call, _stable_actor
 from app.agent.registry import (
-    PATIENT_BOUND_FIELDS,
     TOOL_REGISTRY,
     ToolDefinition,
     get_llm_tool_schemas,
 )
-from app.agent.state import AgentState, ConversationMessage, PendingAction, PendingToolCall
+from app.agent.state import AgentState, PendingAction, PendingToolCall
 from app.agent_tools.schemas import AgentToolError
-from app.auth.permissions import actor_role, authorize_tool_call, linked_patient_id
-from app.errors import ERROR_CATALOG, AppError
-from app.models.appointment import Appointment
-from app.models.dental_service import DentalService
-from app.models.doctor import Doctor
-from app.models.patient import Patient
+from app.auth.permissions import (
+    actor_role,
+    authorize_tool_call,
+    linked_patient_ids,
+)
+from app.errors import AppError
 from app.models.user import User
-from app.services.appointment_service import validate_appointment_slot
-from app.utils.date_utils import gregorian_to_jalali
-
+from app.services.audit_service import record_audit
 
 logger = logging.getLogger("dental_agent.agent")
 
-# Each model/tool round costs about two graph supersteps. This explicit cap is
-# enforced in the decision node (and a slightly larger LangGraph recursion
-# limit is a second line of defence) so a looping model cannot run unbounded.
-MAX_AGENT_STEPS = 12
-AGENT_RECURSION_LIMIT = MAX_AGENT_STEPS * 2 + 8
 
-
-class AgentContext(TypedDict, total=False):
-    """Trusted per-invoke inputs from the host: dependencies, session identity,
-    the authenticated actor, and the confirmation decision. Nothing here
-    round-trips through AgentState."""
-
-    db: AsyncSession
-    llm: ToolCallingChatModel
-    session_id: str | None
-    actor: User | None
-    confirmation: ConfirmationDecision
-    # Test/host injection only. The HTTP router never accepts this from a
-    # client; production leaves it unset so the service uses the real clock.
-    now: datetime | None
-
-
-def _append_message(
-    state: AgentState,
-    role: str,
-    content: Any,
-    **metadata: Any,
-) -> list[ConversationMessage]:
-    message: ConversationMessage = {"role": role, "content": content, **metadata}  # type: ignore[typeddict-item]
-    return [*state.get("messages", []), message]
-
-
-def _latest_user_text(state: AgentState) -> str:
-    """Return the latest user-visible request text from trusted graph state."""
-    for item in reversed(state.get("messages", [])):
-        if item.get("role") == "user":
-            content = item.get("content", "")
-            return _message_content_to_text(content)
-    return ""
-
-
-def _message_content_to_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "".join(
-            block.get("text", "") for block in content if isinstance(block, dict)
-        )
-    return str(content) if content is not None else ""
-
-
-def _messages_for_model(
-    state: AgentState, *, patient_bound: bool = False
-) -> list[BaseMessage]:
-    messages: list[BaseMessage] = [
-        SystemMessage(
-            content=build_system_prompt(patient_bound=patient_bound)
-        )
-    ]
-    for item in state.get("messages", []):
-        role = item["role"]
-        content = item.get("content", "")
-        if role == "user":
-            messages.append(HumanMessage(content=content))
-        elif role == "system":
-            messages.append(SystemMessage(content=content))
-        elif role == "assistant":
-            tool_calls = item.get("tool_calls", [])
-            messages.append(
-                AIMessage(content=content, tool_calls=tool_calls)
-                if tool_calls
-                else AIMessage(content=content)
-            )
-        elif role == "tool":
-            messages.append(
-                ToolMessage(
-                    content=content,
-                    tool_call_id=item["tool_call_id"],
-                    name=item.get("name"),
-                )
-            )
-    return messages
-
-
-def _safe_tool_call_for_history(
-    name: str,
-    arguments: dict[str, Any],
-    call_id: str,
-) -> dict[str, Any]:
-    # Sensitive booking fields are needed by the Tool but not by later LLM turns.
-    safe_arguments = {
-        key: value
-        for key, value in arguments.items()
-        if key not in {"national_id", "full_name", "phone", "reason"}
-    }
-    return {"name": name, "args": safe_arguments, "id": call_id, "type": "tool_call"}
-
-
-async def _stable_actor(runtime: Runtime[AgentContext]) -> User | None:
-    """Return the trusted actor, refreshing it only when the ORM expired it.
-
-    A failed write rolls the session back, which expires every loaded ORM
-    instance. Reading ``actor.id``/``actor.role`` afterwards could trigger a
-    lazy load outside the async/greenlet context (``MissingGreenlet``). Test
-    doubles that are transient/detached keep their in-memory attributes.
-    """
-    actor = runtime.context.get("actor")
-    db = runtime.context.get("db")
-    if actor is None or db is None:
+def _tool_denied_label(actor: User | None) -> str | None:
+    """Stable, non-sensitive label of the denied caller for the audit row."""
+    if actor is None:
         return None
-    try:
-        state = sa_inspect(actor)
-        if state.persistent and state.expired:
-            await db.refresh(actor)
-    except Exception:
-        logger.warning("Agent actor could not be refreshed; failing closed")
-        return None
-    return actor
+    return f"{actor.role}:{actor.phone}"
+
+# Public surface, re-exported for the HTTP router and tests. Everything else
+# lives in the sibling modules (context, messages, patient_binding,
+# confirmation_text, outcomes) and is internal.
+__all__ = [
+    "AGENT_RECURSION_LIMIT",
+    "MAX_AGENT_STEPS",
+    "AgentContext",
+    "agent_graph",
+    "create_agent_graph",
+    "safe_tool_call_for_history",
+]
 
 
-def _is_patient_actor(actor: User | None) -> bool:
-    return actor is not None and actor_role(actor) == "patient"
-
-
-async def _prepare_patient_call(
+async def _authorize_tool_call_audited(
     runtime: Runtime[AgentContext],
-    call: dict[str, Any],
     actor: User | None,
-) -> tuple[dict[str, Any], AgentToolError | None]:
-    """Force the authenticated patient's own id into patient-bound tools.
+    tool_name: str,
+    arguments: object,
+) -> None:
+    """Authorize a tool call and audit role denials of staff-facing tools.
 
-    The model may omit identity or try to supply somebody else's id/national
-    id. For patient-role actors every identity argument is removed and replaced
-    with the linked patient record. Staff callers are unaffected. The
-    authorization choke point still re-checks ownership before execution.
+    The denial itself still fails closed; the audit row is best-effort and
+    never turns a rejection into a success.
     """
-    if not _is_patient_actor(actor):
-        return call, None
-
-    name = call.get("tool_name")
-    hidden = PATIENT_BOUND_FIELDS.get(name or "")
-    if not hidden:
-        return call, None
-
-    linked = await linked_patient_id(runtime.context["db"], actor)
-    if linked is None:
-        return call, _catalog_error("PATIENT_ACCOUNT_NOT_LINKED")
-
-    arguments = dict(call.get("arguments") or {})
-    bound = {
-        key: value for key, value in arguments.items() if key not in hidden
-    }
-    bound["patient_id"] = linked
-    return {**call, "arguments": bound}, None
-
-
-def _confirmation_prompt(action: PendingAction) -> str:
-    """Safe id-based fallback used only when no richer description is possible."""
-    name = action.get("tool_name")
-    args = action.get("arguments") or {}
-    labels = {
-        "book_appointment": "ثبت نوبت",
-        "cancel_appointment": "لغو نوبت",
-        "reschedule_appointment": "جابه‌جایی نوبت",
-    }
-    summary = labels.get(name, "اجرای عملیات")
-    if name == "book_appointment":
-        summary += (
-            f" برای پزشک {args.get('doctor_id', 'نامشخص')}"
-            f" و خدمت {args.get('service_id', 'نامشخص')}"
-            f" در تاریخ {args.get('appointment_date', 'نامشخص')}"
-            f" ساعت {args.get('appointment_time', 'نامشخص')}"
-        )
-    elif name == "reschedule_appointment":
-        summary += (
-            f" به تاریخ {args.get('appointment_date', 'نامشخص')} ساعت "
-            f"{args.get('appointment_time', 'نامشخص')}"
-        )
-    return f"برای {summary} تأیید می‌کنید؟"
-
-
-async def _describe_action(
-    db: AsyncSession,
-    action: PendingAction,
-    actor: User | None,
-    *,
-    now: datetime | None = None,
-) -> str:
-    """Build a human-readable confirmation from trusted database records.
-
-    Names, services and current times come from the database, never from the
-    model or client. Missing records raise a catalogued ``AppError`` so a
-    confirmation with guessed text is never shown.
-    """
-    name = action.get("tool_name")
-    args = action.get("arguments") or {}
-
-    if name == "book_appointment":
-        doctor_id = args.get("doctor_id")
-        service_id = args.get("service_id")
-        doctor = await db.get(Doctor, doctor_id) if isinstance(doctor_id, int) else None
-        service = (
-            await db.get(DentalService, service_id)
-            if isinstance(service_id, int)
-            else None
-        )
-        if doctor is None:
-            raise AppError("DOCTOR_NOT_FOUND")
-        if service is None:
-            raise AppError("DENTAL_SERVICE_NOT_FOUND")
-        if not doctor.is_active:
-            raise AppError("DOCTOR_INACTIVE")
-        if not service.is_active:
-            raise AppError("APPOINTMENT_SERVICE_INACTIVE")
-
-        # Validate the requested slot before showing a confirmation. The write
-        # still revalidates atomically, but the user must never be asked to
-        # approve an already-booked or malformed slot.
-        slot = await validate_appointment_slot(
-            db,
-            doctor.id,
-            service.id,
-            str(args.get("appointment_date", "")),
-            str(args.get("appointment_time", "")),
-            now=now,
-        )
-        appointment_date, appointment_time = gregorian_to_jalali(slot)
-
-        summary = (
-            f"ثبت نوبت برای «{service.name}» با {doctor.full_name} "
-            f"در تاریخ {appointment_date} ساعت {appointment_time}"
-        )
-        if not _is_patient_actor(actor):
-            patient_id = args.get("patient_id")
-            if isinstance(patient_id, int):
-                patient = await db.get(Patient, patient_id)
-                if patient is None:
-                    raise AppError("PATIENT_NOT_FOUND")
-                summary += f" برای {patient.full_name}"
-            else:
-                national_id = args.get("national_id")
-                patient = (
-                    await db.scalar(
-                        select(Patient).where(
-                            Patient.national_id == national_id
-                        )
-                    )
-                    if national_id
-                    else None
+    db = runtime.context["db"]
+    try:
+        await authorize_tool_call(db, actor, tool_name, arguments)
+    except AppError as exc:
+        if exc.code == "COMMON_FORBIDDEN":
+            try:
+                await record_audit(
+                    db,
+                    actor=actor,
+                    action="agent.tool.denied",
+                    target_label=_tool_denied_label(actor),
+                    detail={"tool": tool_name},
                 )
-                if patient is not None:
-                    summary += f" برای {patient.full_name}"
-                elif args.get("full_name"):
-                    summary += f" برای {args['full_name']} (بیمار جدید)"
-                else:
-                    raise AppError("COMMON_VALIDATION_ERROR")
-        return f"{summary} را تأیید می‌کنید؟"
-
-    if name in {"cancel_appointment", "reschedule_appointment"}:
-        appointment_id = args.get("appointment_id")
-        appointment = (
-            await db.get(Appointment, appointment_id)
-            if isinstance(appointment_id, int)
-            else None
-        )
-        if appointment is None:
-            raise AppError("APPOINTMENT_NOT_FOUND")
-        if name == "cancel_appointment":
-            if appointment.status == "cancelled":
-                raise AppError("APPOINTMENT_ALREADY_CANCELLED")
-            if appointment.status != "scheduled":
-                raise AppError("APPOINTMENT_NOT_CANCELLABLE")
-        elif appointment.status != "scheduled":
-            raise AppError("APPOINTMENT_NOT_RESCHEDULABLE")
-        current_date, current_time = gregorian_to_jalali(
-            appointment.appointment_time
-        )
-        doctor = await db.get(Doctor, appointment.doctor_id)
-        service = await db.get(DentalService, appointment.service_id)
-        doctor_name = doctor.full_name if doctor is not None else "پزشک ثبت‌شده"
-        service_name = service.name if service is not None else "خدمت ثبت‌شده"
-
-        if name == "cancel_appointment":
-            return (
-                f"لغو نوبت «{service_name}» با {doctor_name} در تاریخ "
-                f"{current_date} ساعت {current_time} را تأیید می‌کنید؟"
-            )
-
-        target = await validate_appointment_slot(
-            db,
-            appointment.doctor_id,
-            appointment.service_id,
-            str(args.get("appointment_date", "")),
-            str(args.get("appointment_time", "")),
-            exclude_appointment_id=appointment.id,
-            now=now,
-        )
-        target_date, target_time = gregorian_to_jalali(target)
-        return (
-            f"جابه‌جایی نوبت «{service_name}» با {doctor_name} از تاریخ "
-            f"{current_date} ساعت {current_time} به تاریخ {target_date} "
-            f"ساعت {target_time} را تأیید می‌کنید؟"
-        )
-
-    return _confirmation_prompt(action)
-
-
-def _catalog_error(code: str) -> AgentToolError:
-    definition = ERROR_CATALOG[code]
-    return AgentToolError(code=definition.code, message=definition.message, details={})
-
-
-_WRITE_TOOL_NAMES = {
-    "book_appointment",
-    "cancel_appointment",
-    "reschedule_appointment",
-}
-
-
-def _mentions_internal_appointment_id(text: str, appointment_id: int) -> bool:
-    """Whether a user-facing string repeats the internal appointment id."""
-    normalized = normalize_text(text)
-    return bool(
-        re.search(
-            rf"(?<![\d/]){appointment_id}(?![\d/])",
-            normalized,
-        )
-    )
-
-
-async def _write_success_message(
-    db: AsyncSession, state: AgentState
-) -> str | None:
-    """Build a descriptive success message without internal appointment ids.
-
-    All names and times come from the committed database row. If that row is
-    unavailable, use a generic no-id message rather than echoing the tool
-    payload. Returns None for failed or non-write tools.
-    """
-    name = state.get("last_tool_name")
-    result = state.get("last_tool_result")
-    if name not in _WRITE_TOOL_NAMES:
-        return None
-    if not isinstance(result, dict) or not result.get("ok"):
-        return None
-    data = result.get("data")
-    if not isinstance(data, dict):
-        return None
-
-    appointment_id = data.get("appointment_id")
-    appointment = None
-    if isinstance(appointment_id, int):
-        try:
-            appointment = await db.get(Appointment, appointment_id)
-        except Exception as exc:  # noqa: BLE001 - messaging must not fail
-            logger.warning(
-                "Could not load committed appointment for success message (%s)",
-                type(exc).__name__,
-            )
-    if appointment is not None:
-        try:
-            appointment_date, appointment_time = gregorian_to_jalali(
-                appointment.appointment_time
-            )
-            doctor = await db.get(Doctor, appointment.doctor_id)
-            service = await db.get(DentalService, appointment.service_id)
-            doctor_name = (
-                doctor.full_name if doctor is not None else "پزشک ثبت‌شده"
-            )
-            service_name = (
-                service.name if service is not None else "خدمت ثبت‌شده"
-            )
-        except Exception as exc:  # noqa: BLE001 - messaging must not fail
-            logger.warning(
-                "Could not describe committed appointment (%s)",
-                type(exc).__name__,
-            )
-        else:
-            if name == "book_appointment":
-                return (
-                    f"نوبت «{service_name}» با {doctor_name} در تاریخ "
-                    f"{appointment_date} ساعت {appointment_time} ثبت شد."
+            except Exception:  # noqa: BLE001 - audit must not break the turn
+                logger.warning(
+                    "Could not record agent tool denial for %s",
+                    tool_name,
                 )
-            if name == "cancel_appointment":
-                return (
-                    f"نوبت «{service_name}» با {doctor_name} در تاریخ "
-                    f"{appointment_date} ساعت {appointment_time} لغو شد."
-                )
-            return (
-                f"نوبت «{service_name}» با {doctor_name} به تاریخ "
-                f"{appointment_date} ساعت {appointment_time} منتقل شد."
-            )
-
-    # No database row is available (for example it disappeared after a
-    # committed write). Keep the fallback success explicit but id-free.
-    if name == "book_appointment":
-        appointment_time = data.get("appointment_time")
-        if appointment_time:
-            return f"نوبت برای {appointment_time} ثبت شد."
-        return "نوبت با موفقیت ثبت شد."
-    if name == "cancel_appointment":
-        return "نوبت با موفقیت لغو شد."
-    appointment_time = data.get("appointment_time")
-    if appointment_time:
-        return f"نوبت به {appointment_time} منتقل شد."
-    return "نوبت با موفقیت جابه‌جا شد."
+        raise
 
 
-async def _successful_write_fallback(
-    db: AsyncSession, state: AgentState
-) -> str | None:
-    """Describe a committed write when only the final LLM phrasing failed.
-
-    The fallback is derived exclusively from the successful tool result and
-    committed database row. It never runs the tool again and returns None for
-    failed or non-write tools, so an error cannot be reported as a success.
-    """
-    return await _write_success_message(db, state)
-
-
-async def _sanitize_write_final_response(
-    db: AsyncSession,
+def _tool_error_update(
     state: AgentState,
-    response: str,
-) -> str:
-    """Replace an LLM reply that leaked the internal appointment id."""
-    name = state.get("last_tool_name")
-    result = state.get("last_tool_result")
-    if name not in _WRITE_TOOL_NAMES:
-        return response
-    if not isinstance(result, dict) or not result.get("ok"):
-        return response
-    data = result.get("data")
-    if not isinstance(data, dict):
-        return response
-    appointment_id = data.get("appointment_id")
-    if not isinstance(appointment_id, int):
-        return response
-    if not _mentions_internal_appointment_id(response, appointment_id):
-        return response
-    safe = await _write_success_message(db, state)
-    return safe or "عملیات با موفقیت انجام شد."
-
-
-def _tool_message(
-    *,
-    call_id: str,
-    name: str,
-    result: dict[str, Any],
+    pending_calls: list[PendingToolCall],
+    call: PendingToolCall,
+    error: AgentToolError,
 ) -> dict[str, Any]:
-    return {
-        "role": "tool",
-        "tool_call_id": call_id,
-        "name": name,
-        "content": json.dumps(result, ensure_ascii=False),
-    }
-
-
-def _finish_rejected_confirmation(state: AgentState) -> dict[str, Any]:
-    messages = list(state.get("messages", []))
-    for call in state.get("pending_tool_calls", []):
-        messages.append(
-            _tool_message(
-                call_id=call["tool_call_id"],
-                name=call["tool_name"],
-                result={
-                    "ok": False,
-                    "confirmation": {"status": "rejected"},
-                },
-            )
-        )
-    response = "درخواست انجام نشد."
-    messages.append({"role": "assistant", "content": response})
-    return {
-        "confirmation_required": False,
-        "confirmation_token": None,
-        "pending_action": None,
-        "pending_tool_calls": [],
-        "selected_tool": None,
-        "selected_tool_arguments": {},
-        "selected_tool_call_id": None,
-        "route": "finish",
-        "final_response": response,
-        "messages": messages,
-    }
-
-
-def _finish_clarification(state: AgentState, response: str) -> dict[str, Any]:
-    """End a turn with a clarification and no usable write confirmation."""
-    messages = list(state.get("messages", []))
-    for call in state.get("pending_tool_calls", []):
-        messages.append(
-            _tool_message(
-                call_id=call["tool_call_id"],
-                name=call["tool_name"],
-                result={
-                    "ok": False,
-                    "data": None,
-                    "error": {
-                        "code": "APPOINTMENT_SELECTION_REQUIRED",
-                        "message": response,
-                        "details": {},
-                    },
-                },
-            )
-        )
-    messages.append({"role": "assistant", "content": response})
-    return {
-        "confirmation_required": False,
-        "confirmation_token": None,
-        "confirmation_prompt": None,
-        "confirmation_status": "not_required",
-        "pending_action": None,
-        "pending_tool_calls": [],
-        "selected_tool": None,
-        "selected_tool_arguments": {},
-        "selected_tool_call_id": None,
-        "last_tool_result": None,
-        "last_tool_error": None,
-        "last_tool_name": None,
-        "route": "finish",
-        "final_response": response,
-        "messages": messages,
-    }
-
-
-def _finish_error(state: AgentState, code: str) -> dict[str, Any]:
-    """End the turn with a catalogued Persian message and no pending write."""
-    error = _catalog_error(code)
+    """Drop a failed call from the queue and report it to the model as a tool result."""
+    pending_calls.pop(0)
     result = {"ok": False, "data": None, "error": error.model_dump(mode="json")}
+    messages = _append_message(
+        state,
+        "tool",
+        json.dumps(result, ensure_ascii=False),
+        tool_call_id=call["tool_call_id"],
+        name=call["tool_name"],
+    )
     return {
-        "confirmation_required": False,
-        "confirmation_token": None,
-        "confirmation_status": "not_required",
-        "pending_action": None,
-        "pending_tool_calls": [],
-        "selected_tool": None,
-        "selected_tool_arguments": {},
-        "selected_tool_call_id": None,
+        "pending_tool_calls": pending_calls,
         "last_tool_result": result,
         "last_tool_error": error,
-        "route": "finish",
-        "final_response": error.message,
-        "messages": _append_message(state, "assistant", error.message),
+        "messages": messages,
+        "route": "continue",
     }
 
 
-def _finish_step_limit(state: AgentState, steps: int) -> dict[str, Any]:
-    response = (
-        "درخواست بیش از حد پیچیده شد و برای جلوگیری از اجرای ناقص متوقف شد. "
-        "لطفاً آن را کوتاه‌تر و مشخص‌تر بنویسید یا یک خدمت را انتخاب کنید."
-    )
-    return {
-        "confirmation_required": False,
-        "confirmation_token": None,
-        "confirmation_status": "not_required",
-        "pending_action": None,
-        "pending_tool_calls": [],
-        "selected_tool": None,
-        "selected_tool_arguments": {},
-        "selected_tool_call_id": None,
-        "route": "finish",
-        "final_response": response,
-        "messages": _append_message(state, "assistant", response),
-        "step_count": steps,
-    }
-
-
-async def _agent_decision_impl(
+async def _resolve_pending_action(
     state: AgentState,
     runtime: Runtime[AgentContext],
+    actor: User | None,
 ) -> dict[str, Any]:
-    actor = await _stable_actor(runtime)
+    """Phase 1: settle a write that is waiting for the user's confirmation."""
     pending_action = state.get("pending_action")
+    if not isinstance(pending_action, dict):
+        return _finish_rejected_confirmation(state)
+    # Untrusted state claims (e.g. confirmation_status="approved") never
+    # authorize execution. Approval must arrive via the host-owned
+    # AgentContext and match the server-side record issued for this exact
+    # session, tool, and displayed arguments; records are single-use.
+    decision = runtime.context.get("confirmation")
+    session_id = runtime.context.get("session_id")
+    user_id = actor.id if actor is not None else None
+    legacy_rejected = state.get("confirmation_status", "not_required") == "rejected"
+    context_rejected = (
+        isinstance(decision, dict) and decision.get("decision") == "rejected"
+    )
 
-    if pending_action is not None:
-        if not isinstance(pending_action, dict):
-            return _finish_rejected_confirmation(state)
-        # Untrusted state claims (e.g. confirmation_status="approved") never
-        # authorize execution. Approval must arrive via the host-owned
-        # AgentContext and match the server-side record issued for this exact
-        # session, tool, and displayed arguments; records are single-use.
-        decision = runtime.context.get("confirmation")
-        session_id = runtime.context.get("session_id")
-        user_id = actor.id if actor is not None else None
-        legacy_rejected = state.get("confirmation_status", "not_required") == "rejected"
-        context_rejected = (
-            isinstance(decision, dict) and decision.get("decision") == "rejected"
-        )
-
-        if legacy_rejected or context_rejected:
-            token = state.get("confirmation_token")
-            if isinstance(decision, dict) and decision.get("token"):
-                token = decision.get("token")
-            await confirmation_store.consume(
-                runtime.context["db"],
-                token,
-                session_id=session_id,
-                user_id=user_id,
-                decision="rejected",
-            )
-            return _finish_rejected_confirmation(state)
-
-        if not (isinstance(decision, dict) and decision.get("decision") == "approved"):
-            return {
-                "confirmation_required": True,
-                "confirmation_status": "pending",
-                "route": "confirmation",
-            }
-
-        record = await confirmation_store.consume(
+    if legacy_rejected or context_rejected:
+        token = state.get("confirmation_token")
+        if isinstance(decision, dict) and decision.get("token"):
+            token = decision.get("token")
+        await confirmation_store.consume(
             runtime.context["db"],
-            decision.get("token"),
+            token,
             session_id=session_id,
             user_id=user_id,
-            decision="approved",
+            decision="rejected",
         )
-        if (
-            record is None
-            or record.tool_name != pending_action.get("tool_name")
-            or record.arguments != pending_action.get("arguments")
-            or record.tool_call_id != pending_action.get("tool_call_id")
-        ):
-            # Unknown or consumed token, another session, or the pending action
-            # no longer matches what was displayed for confirmation.
-            return _finish_rejected_confirmation(state)
+        return _finish_rejected_confirmation(state)
 
-        pending_calls = list(state.get("pending_tool_calls", []))
-        if pending_calls:
-            pending_calls.pop(0)
+    if not (isinstance(decision, dict) and decision.get("decision") == "approved"):
         return {
-            "pending_tool_calls": pending_calls,
-            "pending_action": None,
-            "confirmation_token": None,
-            "selected_tool": record.tool_name,
-            "selected_tool_arguments": dict(record.arguments),
-            "selected_tool_call_id": record.tool_call_id,
             "confirmation_required": True,
-            "route": "execute_tool",
-            "final_response": None,
+            "confirmation_status": "pending",
+            "route": "confirmation",
         }
 
-    # Compatibility/testing input: a host may supply a preselected allowlisted
-    # tool while no model decision node is configured.
-    if state.get("requested_tool"):
-        call_id = f"host-{uuid4()}"
-        name = state["requested_tool"]
-        arguments = state.get("tool_arguments", {})
-        pending_calls = list(state.get("pending_tool_calls", []))
-        pending_calls.append(
-            {"tool_name": name, "arguments": arguments, "tool_call_id": call_id}
-        )
-        safe_call = _safe_tool_call_for_history(name, arguments, call_id)
-        history = _append_message(
-            state,
-            "assistant",
-            "",
-            tool_calls=[safe_call],
-        )
-        return {
-            "requested_tool": None,
-            "tool_arguments": {},
-            "messages": history,
-            "pending_tool_calls": pending_calls,
-            "route": "continue",
-        }
+    record = await confirmation_store.consume(
+        runtime.context["db"],
+        decision.get("token"),
+        session_id=session_id,
+        user_id=user_id,
+        decision="approved",
+    )
+    if (
+        record is None
+        or record.tool_name != pending_action.get("tool_name")
+        or record.arguments != pending_action.get("arguments")
+        or record.tool_call_id != pending_action.get("tool_call_id")
+    ):
+        # Unknown or consumed token, another session, or the pending action
+        # no longer matches what was displayed for confirmation.
+        return _finish_rejected_confirmation(state)
 
     pending_calls = list(state.get("pending_tool_calls", []))
     if pending_calls:
-        call = pending_calls[0]
-        definition = TOOL_REGISTRY.get(call["tool_name"])
-        if definition is None:
-            pending_calls.pop(0)
-            error = _catalog_error("COMMON_VALIDATION_ERROR")
-            result = {"ok": False, "data": None, "error": error.model_dump(mode="json")}
-            messages = _append_message(
-                state,
-                "tool",
-                json.dumps(result, ensure_ascii=False),
-                tool_call_id=call["tool_call_id"],
-                name=call["tool_name"],
-            )
-            return {
-                "pending_tool_calls": pending_calls,
-                "last_tool_result": result,
-                "last_tool_error": error,
-                "messages": messages,
-                "route": "continue",
-            }
-
-        # Force the authenticated patient's identity before validation. This
-        # is the security boundary; hiding schema fields is only UX.
-        call, binding_error = await _prepare_patient_call(runtime, call, actor)
-        if binding_error is not None:
-            pending_calls.pop(0)
-            result = {
-                "ok": False,
-                "data": None,
-                "error": binding_error.model_dump(mode="json"),
-            }
-            messages = _append_message(
-                state,
-                "tool",
-                json.dumps(result, ensure_ascii=False),
-                tool_call_id=call["tool_call_id"],
-                name=call["tool_name"],
-            )
-            return {
-                "pending_tool_calls": pending_calls,
-                "last_tool_result": result,
-                "last_tool_error": binding_error,
-                "messages": messages,
-                "route": "continue",
-            }
-
-        try:
-            validated_arguments = definition.input_schema.model_validate(
-                call["arguments"]
-            )
-        except ValidationError:
-            pending_calls.pop(0)
-            error = _catalog_error("COMMON_VALIDATION_ERROR")
-            result = {"ok": False, "data": None, "error": error.model_dump(mode="json")}
-            messages = _append_message(
-                state,
-                "tool",
-                json.dumps(result, ensure_ascii=False),
-                tool_call_id=call["tool_call_id"],
-                name=call["tool_name"],
-            )
-            return {
-                "pending_tool_calls": pending_calls,
-                "last_tool_result": result,
-                "last_tool_error": error,
-                "messages": messages,
-                "route": "continue",
-            }
-        call = {
-            **call,
-            "arguments": validated_arguments.model_dump(),
-        }
-        pending_calls[0] = call
-        if definition.operation == "write":
-            action: PendingAction = {
-                "tool_name": call["tool_name"],
-                "arguments": call["arguments"],
-                "tool_call_id": call["tool_call_id"],
-            }
-            return {
-                "pending_action": action,
-                "confirmation_required": True,
-                "confirmation_status": "pending",
-                "route": "confirmation",
-            }
         pending_calls.pop(0)
-        return {
-            "pending_tool_calls": pending_calls,
-            "selected_tool": call["tool_name"],
-            "selected_tool_arguments": call["arguments"],
-            "selected_tool_call_id": call["tool_call_id"],
-            "confirmation_required": False,
-            "confirmation_status": "not_required",
-            "route": "execute_tool",
-        }
+    return {
+        "pending_tool_calls": pending_calls,
+        "pending_action": None,
+        "confirmation_token": None,
+        "selected_tool": record.tool_name,
+        "selected_tool_arguments": dict(record.arguments),
+        "selected_tool_call_id": record.tool_call_id,
+        "confirmation_required": True,
+        "route": "execute_tool",
+        "final_response": None,
+    }
 
-    model = runtime.context.get("llm") or create_chat_model()
-    patient_bound = _is_patient_actor(actor)
+
+def _queue_host_requested_tool(state: AgentState) -> dict[str, Any]:
+    """Phase 2: queue a preselected allowlisted tool supplied by the host.
+
+    Compatibility/testing input, and the path the router uses for a
+    deterministic booking after an option number was resolved server-side.
+    """
+    call_id = f"host-{uuid4()}"
+    name = state["requested_tool"]
+    arguments = state.get("tool_arguments", {})
+    pending_calls = list(state.get("pending_tool_calls", []))
+    pending_calls.append(
+        {"tool_name": name, "arguments": arguments, "tool_call_id": call_id}
+    )
+    safe_call = safe_tool_call_for_history(name, arguments, call_id)
+    history = _append_message(
+        state,
+        "assistant",
+        "",
+        tool_calls=[safe_call],
+    )
+    return {
+        "requested_tool": None,
+        "tool_arguments": {},
+        "messages": history,
+        "pending_tool_calls": pending_calls,
+        "route": "continue",
+    }
+
+
+async def _process_pending_call(
+    state: AgentState,
+    runtime: Runtime[AgentContext],
+    actor: User | None,
+) -> dict[str, Any]:
+    """Phase 3: validate the next queued call; reads run, writes need a confirmation."""
+    pending_calls = list(state.get("pending_tool_calls", []))
+    call = pending_calls[0]
+    definition = TOOL_REGISTRY.get(call["tool_name"])
+    if definition is None:
+        return _tool_error_update(
+            state, pending_calls, call, _catalog_error("COMMON_VALIDATION_ERROR")
+        )
+
+    # Force the authenticated patient's identity before validation. This is the
+    # security boundary; hiding schema fields is only UX.
+    call, binding_error = await _prepare_patient_call(runtime, call, actor)
+    if binding_error is not None:
+        return _tool_error_update(state, pending_calls, call, binding_error)
+
     try:
-        response = await model.bind_tools(
-            get_llm_tool_schemas(patient_bound=patient_bound)
-        ).ainvoke(_messages_for_model(state, patient_bound=patient_bound))
-    except Exception as exc:
-        logger.error(
-            "Agent LLM request failed (%s); exception details omitted",
-            type(exc).__name__,
+        validated_arguments = definition.input_schema.model_validate(call["arguments"])
+    except ValidationError:
+        return _tool_error_update(
+            state, pending_calls, call, _catalog_error("COMMON_VALIDATION_ERROR")
         )
-        fallback = await _successful_write_fallback(
-            runtime.context["db"], state
-        )
-        if fallback is not None:
-            return {
-                "last_tool_result": state.get("last_tool_result"),
-                "last_tool_error": state.get("last_tool_error"),
-                "final_response": fallback,
-                "route": "finish",
-                "messages": _append_message(state, "assistant", fallback),
-            }
-        error = _catalog_error("INTERNAL_ERROR")
-        result = {"ok": False, "data": None, "error": error.model_dump(mode="json")}
-        final_response = error.message
-        return {
-            "last_tool_result": result,
-            "last_tool_error": error,
-            "final_response": final_response,
-            "route": "finish",
-            "messages": _append_message(state, "assistant", final_response),
+    call = {
+        **call,
+        "arguments": validated_arguments.model_dump(),
+    }
+    pending_calls[0] = call
+    if definition.operation == "write":
+        action: PendingAction = {
+            "tool_name": call["tool_name"],
+            "arguments": call["arguments"],
+            "tool_call_id": call["tool_call_id"],
         }
+        return {
+            "pending_action": action,
+            "confirmation_required": True,
+            "confirmation_status": "pending",
+            "route": "confirmation",
+        }
+    pending_calls.pop(0)
+    return {
+        "pending_tool_calls": pending_calls,
+        "selected_tool": call["tool_name"],
+        "selected_tool_arguments": call["arguments"],
+        "selected_tool_call_id": call["tool_call_id"],
+        "confirmation_required": False,
+        "confirmation_status": "not_required",
+        "route": "execute_tool",
+    }
 
+
+async def _model_failure_update(
+    exc: Exception,
+    state: AgentState,
+    runtime: Runtime[AgentContext],
+) -> dict[str, Any]:
+    """Turn an LLM request failure into a safe reply, or a retryable 503."""
+    logger.error(
+        "Agent LLM request failed (%s); exception details omitted",
+        type(exc).__name__,
+    )
+    fallback = await _successful_write_fallback(
+        runtime.context["db"], state
+    )
+    if fallback is not None:
+        return {
+            "last_tool_result": state.get("last_tool_result"),
+            "last_tool_error": state.get("last_tool_error"),
+            "final_response": fallback,
+            "route": "finish",
+            "messages": _append_message(state, "assistant", fallback),
+        }
+    provider_code = _provider_failure_code(exc)
+    if provider_code is not None:
+        # Surface this as a retryable HTTP 503 instead of persisting a
+        # generic "internal error" turn. The client can retry the same
+        # message without duplicating a server-side chat turn.
+        raise AppError(provider_code) from exc
+    error = _catalog_error("INTERNAL_ERROR")
+    result = {"ok": False, "data": None, "error": error.model_dump(mode="json")}
+    final_response = error.message
+    return {
+        "last_tool_result": result,
+        "last_tool_error": error,
+        "final_response": final_response,
+        "route": "finish",
+        "messages": _append_message(state, "assistant", final_response),
+    }
+
+
+async def _interpret_model_response(
+    response: Any,
+    state: AgentState,
+    runtime: Runtime[AgentContext],
+) -> dict[str, Any]:
+    """Phase 4b: queue the model's tool calls, or finish with its text reply."""
     calls: list[PendingToolCall] = []
     history_calls: list[dict[str, Any]] = []
     for call in getattr(response, "tool_calls", []) or []:
@@ -857,7 +343,7 @@ async def _agent_decision_impl(
         calls.append(
             {"tool_name": name, "arguments": arguments, "tool_call_id": call_id}
         )
-        history_calls.append(_safe_tool_call_for_history(name, arguments, call_id))
+        history_calls.append(safe_tool_call_for_history(name, arguments, call_id))
 
     if calls:
         return {
@@ -892,6 +378,55 @@ async def _agent_decision_impl(
     }
 
 
+async def _ask_model(
+    state: AgentState,
+    runtime: Runtime[AgentContext],
+    actor: User | None,
+) -> dict[str, Any]:
+    """Phase 4a: call the model with the tools this actor may see."""
+    model = runtime.context.get("llm") or create_chat_model()
+    patient_bound = _is_patient_actor(actor)
+    role = actor_role(actor)
+    try:
+        response = await model.bind_tools(
+            get_llm_tool_schemas(
+                patient_bound=patient_bound,
+                role=role,
+                # The concrete account lets staff-only tool visibility honor
+                # per-account allow overrides on top of the role matrix.
+                actor=actor,
+            )
+        ).ainvoke(
+            _messages_for_model(
+                state,
+                patient_bound=patient_bound,
+                role=role,
+                # Keep the prompt clock consistent with the slot logic: a
+                # host/test-injected ``now`` must not disagree with the
+                # system prompt's "today" line.
+                now=runtime.context.get("now"),
+            )
+        )
+    except Exception as exc:
+        return await _model_failure_update(exc, state, runtime)
+    return await _interpret_model_response(response, state, runtime)
+
+
+async def _agent_decision_impl(
+    state: AgentState,
+    runtime: Runtime[AgentContext],
+) -> dict[str, Any]:
+    """Decide the next step: confirmation, queued tool call, or the model."""
+    actor = await _stable_actor(runtime)
+    if state.get("pending_action") is not None:
+        return await _resolve_pending_action(state, runtime, actor)
+    if state.get("requested_tool"):
+        return _queue_host_requested_tool(state)
+    if state.get("pending_tool_calls"):
+        return await _process_pending_call(state, runtime, actor)
+    return await _ask_model(state, runtime, actor)
+
+
 async def _agent_decision_node(
     state: AgentState,
     runtime: Runtime[AgentContext],
@@ -908,6 +443,11 @@ async def _agent_decision_node(
     try:
         updates = await _agent_decision_impl(state, runtime)
     except AppError as exc:
+        if exc.code in {
+            "AGENT_PROVIDER_RATE_LIMITED",
+            "AGENT_PROVIDER_UNAVAILABLE",
+        }:
+            raise
         updates = _finish_error(state, exc.code)
     except Exception as exc:  # noqa: BLE001 - never expose internals
         logger.error(
@@ -935,25 +475,45 @@ async def _confirmation_node(
     actor = await _stable_actor(runtime)
     db = runtime.context["db"]
     try:
-        # Authorize before showing any database-derived appointment details.
-        # A patient must not learn anything about somebody else's appointment.
-        await authorize_tool_call(
-            db,
-            actor,
-            name,
-            action.get("arguments") or {},
-        )
+        arguments = dict(action.get("arguments") or {})
+
         if name in {"cancel_appointment", "reschedule_appointment"}:
+            # Patient callers never get to name an internal row id. The target
+            # is resolved from their own linked record and explicit request
+            # criteria, then stored server-side in the confirmation record.
+            patient_scope: list[int] | None = None
+            if _is_patient_actor(actor):
+                if arguments.get("appointment_id") is not None:
+                    # Reject a foreign id even if it arrived through host state
+                    # rather than the model envelope.
+                    await authorize_tool_call(db, actor, name, arguments)
+                arguments.pop("appointment_id", None)
+                patient_scope = await linked_patient_ids(db, actor)
+                if not patient_scope:
+                    raise AppError("PATIENT_ACCOUNT_NOT_LINKED")
             selection = await resolve_appointment_target(
                 db,
-                appointment_id=(action.get("arguments") or {}).get(
-                    "appointment_id"
+                appointment_id=arguments.get("appointment_id"),
+                user_text=_target_selection_text(
+                    name, _latest_user_text(state)
                 ),
-                user_text=_latest_user_text(state),
+                patient_ids=patient_scope,
                 now=runtime.context.get("now"),
             )
             if selection.clarification:
                 return _finish_clarification(state, selection.clarification)
+            if selection.appointment is not None:
+                arguments["appointment_id"] = selection.appointment.id
+            action = {**action, "arguments": arguments}
+
+        # Authorize before showing any database-derived appointment details.
+        # A patient must not learn anything about somebody else's appointment.
+        await _authorize_tool_call_audited(
+            runtime,
+            actor,
+            name,
+            action.get("arguments") or {},
+        )
         prompt = await _describe_action(
             db,
             action,
@@ -989,6 +549,7 @@ async def _confirmation_node(
         return _finish_error(state, "INTERNAL_ERROR")
 
     return {
+        "pending_action": action,
         "confirmation_required": True,
         "confirmation_status": "pending",
         "confirmation_token": record.token,
@@ -1007,24 +568,32 @@ async def _tool_execution_node(
     call_id = state.get("selected_tool_call_id") or str(uuid4())
     arguments = state.get("selected_tool_arguments", {})
     actor = await _stable_actor(runtime)
+    internal_appointment_id: int | None = None
     if definition is None:
         error = _catalog_error("COMMON_VALIDATION_ERROR")
         result = {"ok": False, "data": None, "error": error.model_dump(mode="json")}
     else:
         try:
             # Authorization choke point: identity comes only from the trusted
-            # host context. No handler runs without a permitted actor.
-            await authorize_tool_call(
-                runtime.context["db"],
+            # host context. Handlers re-check the same policy themselves.
+            await _authorize_tool_call_audited(
+                runtime,
                 actor,
                 name or "",
                 arguments if isinstance(arguments, dict) else {},
             )
             validated = definition.input_schema.model_validate(arguments)
+            # ``actor`` is a trusted host object. It is passed explicitly so a
+            # handler can never fall back to a model/client identity value.
             result_object = await definition.handler(
                 runtime.context["db"],
+                actor=actor,
                 **validated.model_dump(),
             )
+            internal = result_object.internal
+            if isinstance(internal.get("appointment_id"), int):
+                internal_appointment_id = internal["appointment_id"]
+            # ``internal`` is excluded from the model-visible payload.
             result = result_object.model_dump(mode="json")
             error = result_object.error
         except AppError as exc:
@@ -1053,6 +622,7 @@ async def _tool_execution_node(
         "last_tool_result": result,
         "last_tool_error": error,
         "last_tool_name": name or "unknown",
+        "last_internal_appointment_id": internal_appointment_id,
         "selected_tool": None,
         "selected_tool_arguments": {},
         "selected_tool_call_id": None,

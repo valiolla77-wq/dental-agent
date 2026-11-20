@@ -49,6 +49,7 @@ from app.models.patient import Patient  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.routers.agent_chat import get_chat_llm  # noqa: E402
 from app.utils.date_utils import gregorian_to_jalali  # noqa: E402
+from app.utils.persian import to_persian_digits  # noqa: E402
 
 
 def _tool_call(name, arguments, call_id):
@@ -362,8 +363,8 @@ class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["session_id"], "booking-e2e")
         self.assertIn("دکتر تست چت رزرو", payload["confirmation_prompt"])
         self.assertIn("خدمت تست چت رزرو", payload["confirmation_prompt"])
-        self.assertIn(self.jalali_date, payload["confirmation_prompt"])
-        self.assertIn("09:00", payload["confirmation_prompt"])
+        self.assertIn(to_persian_digits(self.jalali_date), payload["confirmation_prompt"])
+        self.assertIn("۰۹:۰۰", payload["confirmation_prompt"])
 
         # The read tool really found the free slot before the proposal.
         tool_message = model.received[1][-1]
@@ -396,8 +397,8 @@ class AgentChatBookingEndToEndTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(appointment.service_id, self.service_id)
         self.assertEqual(appointment.status, "scheduled")
         self.assertIn("نوبت «", final["reply"])
-        self.assertIn(self.jalali_date, final["reply"])
-        self.assertIn("09:00", final["reply"])
+        self.assertIn(to_persian_digits(self.jalali_date), final["reply"])
+        self.assertIn("۰۹:۰۰", final["reply"])
         self.assertIn("ثبت شد", final["reply"])
         self.assertNotIn(f"نوبت {appointment.id}", final["reply"])
         self.assertEqual(model.calls, 3)

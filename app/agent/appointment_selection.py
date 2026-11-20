@@ -155,13 +155,13 @@ def _clock_times(text: str) -> set[str]:
     return times
 
 
-async def _scheduled_for_patient(
-    db: AsyncSession, patient_id: int
+async def _scheduled_for_patients(
+    db: AsyncSession, patient_ids: list[int]
 ) -> list[Appointment]:
     result = await db.execute(
         select(Appointment)
         .where(
-            Appointment.patient_id == patient_id,
+            Appointment.patient_id.in_(patient_ids),
             Appointment.status == "scheduled",
         )
         .order_by(Appointment.appointment_time)
@@ -169,32 +169,33 @@ async def _scheduled_for_patient(
     return list(result.scalars().all())
 
 
-async def resolve_appointment_target(
-    db: AsyncSession,
-    *,
-    appointment_id: int | None,
-    user_text: str,
-    now: datetime | None = None,
-) -> AppointmentSelection:
-    """Resolve an agent-proposed target against the request's explicit criteria.
+async def _scheduled_for_patient(
+    db: AsyncSession, patient_id: int
+) -> list[Appointment]:
+    return await _scheduled_for_patients(db, [patient_id])
 
-    A missing or non-scheduled target is returned as-is so the existing
-    confirmation/description code can raise its precise catalogued error. A
-    scheduled target is only approved when it is the single scheduled
-    appointment for that patient that matches the request. Otherwise the
-    caller receives a clarification string and must issue no confirmation.
+
+async def _scheduled_all(db: AsyncSession) -> list[Appointment]:
+    """Staff-only fallback when no patient scope was supplied.
+
+    The caller must be authorized for the write action before this is used.
+    Ambiguity still requires clarification, so this never picks a row silently.
     """
-    if not isinstance(appointment_id, int):
-        return AppointmentSelection(None)
+    result = await db.execute(
+        select(Appointment)
+        .where(Appointment.status == "scheduled")
+        .order_by(Appointment.appointment_time)
+    )
+    return list(result.scalars().all())
 
-    target = await db.get(Appointment, appointment_id)
-    if target is None or target.status != "scheduled":
-        return AppointmentSelection(target)
 
-    candidates = await _scheduled_for_patient(db, target.patient_id)
-    if len(candidates) <= 1:
-        return AppointmentSelection(target)
-
+async def _match_candidates(
+    db: AsyncSession,
+    candidates: list[Appointment],
+    user_text: str,
+    now: datetime | None,
+) -> list[Appointment]:
+    """Filter DB rows by the explicit criteria in the user's request."""
     text = " ".join(normalize_text(user_text).split())
     dates = _relative_dates(text, now) | _explicit_dates(text)
     times = _clock_times(text)
@@ -237,14 +238,81 @@ async def resolve_appointment_target(
         matched = [
             item for item in matched if item.service_id in selected_services
         ]
+    return matched
 
-    if len(matched) == 1 and matched[0].id == target.id:
+
+async def resolve_appointment_target(
+    db: AsyncSession,
+    *,
+    appointment_id: int | None,
+    user_text: str,
+    patient_id: int | None = None,
+    patient_ids: list[int] | None = None,
+    now: datetime | None = None,
+) -> AppointmentSelection:
+    """Resolve a cancel/reschedule target from database facts.
+
+    ``appointment_id`` is an optional staff/model hint, not an authority. For
+    patient callers the graph passes every linked patient id, so only records
+    owned by that account are candidates and any foreign hint is rejected.
+    With no id, the target is selected only when the user's explicit criteria
+    identify exactly one row. Missing or multiple matches return a
+    clarification and issue no confirmation.
+
+    A missing or non-scheduled explicit target is returned as-is so the
+    confirmation/description code can raise its precise catalogued error.
+    """
+    scope_ids = [int(value) for value in (patient_ids or [])]
+    if patient_id is not None and int(patient_id) not in scope_ids:
+        scope_ids.append(int(patient_id))
+
+    target = (
+        await db.get(Appointment, appointment_id)
+        if isinstance(appointment_id, int)
+        else None
+    )
+    if appointment_id is not None and target is None:
+        return AppointmentSelection(None)
+    if target is not None and target.status != "scheduled":
         return AppointmentSelection(target)
+    if (
+        target is not None
+        and scope_ids
+        and int(target.patient_id) not in scope_ids
+    ):
+        # A supplied id outside the authorized patient scope is never used.
+        return AppointmentSelection(None, NO_MATCHING_SELECTION_MESSAGE)
 
+    if not scope_ids and target is not None:
+        scope_ids = [int(target.patient_id)]
+
+    candidates = (
+        await _scheduled_for_patients(db, scope_ids)
+        if scope_ids
+        else await _scheduled_all(db)
+    )
+
+    if not candidates:
+        return AppointmentSelection(None, NO_MATCHING_SELECTION_MESSAGE)
+
+    # Always run the criteria filter, even when only one row is scheduled.
+    # "امروز"/"فردا" must never silently retarget an existing appointment to a
+    # different day; an unmatched date yields a clarification instead.
+    matched = await _match_candidates(db, candidates, user_text, now)
+
+    if target is not None:
+        if len(matched) == 1 and matched[0].id == target.id:
+            return AppointmentSelection(target)
+        if not matched:
+            return AppointmentSelection(None, NO_MATCHING_SELECTION_MESSAGE)
+        if len(matched) == 1:
+            # The hint points at a different appointment than the explicit
+            # request identifies. Never silently override the request.
+            return AppointmentSelection(None, MISMATCHED_SELECTION_MESSAGE)
+        return AppointmentSelection(None, AMBIGUOUS_SELECTION_MESSAGE)
+
+    if len(matched) == 1:
+        return AppointmentSelection(matched[0])
     if not matched:
         return AppointmentSelection(None, NO_MATCHING_SELECTION_MESSAGE)
-    if len(matched) == 1:
-        # The model proposed a different appointment than the one the explicit
-        # request identifies. Never silently override its choice.
-        return AppointmentSelection(None, MISMATCHED_SELECTION_MESSAGE)
     return AppointmentSelection(None, AMBIGUOUS_SELECTION_MESSAGE)

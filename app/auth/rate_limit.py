@@ -65,12 +65,34 @@ class LoginRateLimiter:
     def _ip_key(ip: str) -> str:
         return f"ip:{ip}"
 
-    def _pruned(self, key: str, window: float) -> deque[float]:
+    # Hard bound on tracked keys: attacker-chosen phones/IPs must never be able
+    # to grow this table without limit.
+    _MAX_KEYS = 10_000
+
+    def _pruned(self, key: str, window: float, *, create: bool = False) -> deque[float]:
         now = self._clock()
-        history = self._failures.setdefault(key, deque())
+        history = self._failures.get(key)
+        if history is None:
+            if not create:
+                return deque()
+            history = self._failures[key] = deque()
         while history and now - history[0] >= window:
             history.popleft()
+        if not history and not create:
+            self._failures.pop(key, None)
         return history
+
+    def _collect_garbage(self, window: float) -> None:
+        if len(self._failures) <= self._MAX_KEYS:
+            return
+        now = self._clock()
+        stale = [
+            key
+            for key, history in self._failures.items()
+            if not history or now - history[-1] >= window
+        ]
+        for key in stale:
+            del self._failures[key]
 
     def check(self, *, ip: str, phone: str) -> None:
         """Raise COMMON_TOO_MANY_REQUESTS when either key is saturated."""
@@ -88,7 +110,8 @@ class LoginRateLimiter:
         now = self._clock()
         window = float(_window_seconds())
         for key in (self._phone_key(phone), self._ip_key(ip)):
-            self._pruned(key, window).append(now)
+            self._pruned(key, window, create=True).append(now)
+        self._collect_garbage(window)
 
     def record_success(self, *, phone: str) -> None:
         """A successful login forgives the account's past failures.
@@ -104,3 +127,50 @@ class LoginRateLimiter:
 
 
 login_rate_limiter = LoginRateLimiter()
+
+
+class ActionRateLimiter:
+    """Per-key sliding-window limiter for authenticated actions (chat, feedback).
+
+    Single process and in memory, like the login limiter; swap for a shared
+    store when running several workers. Buckets are independent, so chat
+    traffic never consumes the feedback allowance.
+    """
+
+    _MAX_KEYS = 10_000
+    _GC_EVERY = 256
+
+    def __init__(self, clock: Callable[[], float] | None = None) -> None:
+        self._clock = clock or _monotonic
+        # (bucket, key) -> (window seconds, monotonic hit timestamps)
+        self._hits: dict[tuple[str, str], tuple[float, deque[float]]] = {}
+        self._calls = 0
+
+    def hit(self, bucket: str, key: str, *, limit: int, window: float) -> None:
+        """Record one action or raise COMMON_TOO_MANY_REQUESTS when saturated."""
+        now = self._clock()
+        self._calls += 1
+        if self._calls % self._GC_EVERY == 0 or len(self._hits) > self._MAX_KEYS:
+            self._collect_garbage(now)
+        _, history = self._hits.setdefault((bucket, key), (window, deque()))
+        while history and now - history[0] >= window:
+            history.popleft()
+        if len(history) >= limit:
+            raise AppError("COMMON_TOO_MANY_REQUESTS")
+        history.append(now)
+        self._hits[(bucket, key)] = (window, history)
+
+    def _collect_garbage(self, now: float) -> None:
+        stale = [
+            key
+            for key, (window, history) in self._hits.items()
+            if not history or now - history[-1] >= window
+        ]
+        for key in stale:
+            del self._hits[key]
+
+    def reset(self) -> None:
+        self._hits.clear()
+
+
+action_rate_limiter = ActionRateLimiter()

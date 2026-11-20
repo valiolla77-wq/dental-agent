@@ -18,7 +18,7 @@ import hashlib
 import hmac
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
 from typing import Any, Literal, TypedDict
 
@@ -53,7 +53,7 @@ class ConfirmationRecord:
 
 def _utcnow() -> datetime:
     """Naive-UTC, matching the OTP and appointment datetime convention."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _default_ttl_seconds() -> int:

@@ -52,11 +52,6 @@ async def _seed_db():
     return session, engine
 
 
-def _await(coro):
-    """Run one coroutine on a fresh loop (sync unittest context)."""
-    return asyncio.run(coro)
-
-
 class LinkAndIdorTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.session, self.engine = await _seed_db()
@@ -130,6 +125,30 @@ class LinkAndIdorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()["error"]["code"], "COMMON_CONFLICT")
 
+    async def test_database_allows_multiple_patients_for_same_account(self):
+        response = self._post(
+            "/patients/501/link-user", self.token_admin,
+            {"phone": "09110000101"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        from sqlalchemy import select
+
+        result = await self.session.execute(select(Patient).where(Patient.id == 500))
+        record = result.scalar_one()
+        # The account-holder and a family record may share one account. The
+        # user link is deliberately non-unique; only an existing record's
+        # holder flag is protected by the partial unique index.
+        record.user_id = 101
+        await self.session.commit()
+
+        owned = (
+            await self.session.execute(
+                select(Patient.id).where(Patient.user_id == 101).order_by(Patient.id)
+            )
+        ).scalars().all()
+        self.assertEqual(list(owned), [500, 501])
+
     async def test_patient_cannot_update_another_record(self):
         response = self._put(
             "/patients/500", self.token_b,
@@ -137,6 +156,33 @@ class LinkAndIdorTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["error"]["code"], "PATIENT_ACCOUNT_NOT_LINKED")
+
+    async def test_patient_cannot_update_even_own_record(self):
+        response = self._put(
+            "/patients/500", self.token_a,
+            {"full_name": "hacked", "phone": "09110000100"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"]["code"], "COMMON_FORBIDDEN")
+
+        unchanged = self._get("/patients/500", self.token_a)
+        self.assertEqual(unchanged.status_code, 200)
+        self.assertEqual(unchanged.json()["full_name"], "record a")
+
+    async def test_admin_cannot_link_record_to_mismatched_account_phone(self):
+        response = self._post(
+            "/patients/501/link-user", self.token_admin,
+            {"phone": "09110000100"},
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.json()["error"]["code"], "COMMON_VALIDATION_ERROR"
+        )
+
+        from sqlalchemy import select
+
+        result = await self.session.execute(select(Patient).where(Patient.id == 501))
+        self.assertIsNone(result.scalar_one().user_id)
 
     async def test_patient_cannot_read_another_patient_appointments(self):
         response = self._get("/appointments/patient/500", self.token_b)

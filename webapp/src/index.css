@@ -1,0 +1,752 @@
+@import "tailwindcss";
+
+/* Self-hosted Vazirmatn (SIL OFL, see assets/fonts/Vazirmatn-OFL.txt). Variable
+ * fonts: one file per script covers every weight, and nothing is fetched from
+ * a third party, so the app also works offline or behind a clinic firewall. */
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/Vazirmatn-Arabic.woff2') format('woff2');
+  unicode-range: U+0600-06FF, U+0750-077F, U+200C-200E, U+FB50-FDFF, U+FE70-FEFC;
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/Vazirmatn-Latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+2000-206F;
+}
+
+/* ---------------------------------------------------------------------------
+ * Dental Agent — design tokens extracted from the 20-page Figma spec.
+ * Palette: teal var(--color-primary) · ink var(--color-ink) · AI purple var(--color-ai) · red var(--color-danger)
+ * Canvas var(--color-canvas) · borders var(--color-line) · radii 10 / 16 / 24.
+ * ------------------------------------------------------------------------- */
+
+@theme {
+  --font-sans: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Vazirmatn', monospace;
+
+  /* Type scale. rem-based, so the browser's text-size setting is respected.
+   * 12px is the floor: nothing meant to be read goes below --text-caption.
+   * Larger display sizes (17px and up) are set where they are used. */
+  --text-caption: 0.75rem; /* 12px  timestamps, badges, table headers, helper text */
+  --text-small: 0.8125rem; /* 13px  secondary text, chips, table cells, nav */
+  --text-body: 0.875rem; /* 14px  default reading text, form controls */
+  --text-lead: 0.9375rem; /* 15px  section titles, emphasised text */
+  --text-heading: 1rem; /* 16px  card and dialog titles */
+
+  /* Surfaces. `surface-muted` is the one tint for inset rows, nested panels and
+   * hover fills; near-identical greys (#f1f5f9, #f8fbfb, #fbfcfd…) were merged
+   * into it so the product has one value instead of eight. */
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8fafc;
+  --color-canvas: #f3f6f9;
+
+  /* Text. Every muted role maps to a token; nothing picks a grey by eye. */
+  --color-ink: #172b47;
+  --color-ink-soft: #2e425c;
+  --color-ink-deep: #101e30;
+  --color-muted: #67768a;
+  --color-faint: #98a4b4;
+  --color-on-accent: #ffffff;
+
+  /* Lines. `line` separates regions, `line-soft` separates rows, `line-strong`
+   * outlines empty states and disabled affordances. */
+  --color-line: #e3e9f0;
+  --color-line-soft: #eef2f6;
+  --color-line-strong: #c9d3de;
+
+  --color-primary: #087f83;
+  --color-primary-deep: #08676b;
+  --color-primary-soft: #e6f5f2;
+  --color-primary-line: #b8dddc;
+  --color-primary-hover: #d9efeb;
+
+  --color-ai: #6260b6;
+  --color-ai-soft: #efeefc;
+  --color-ai-line: #dddcf5;
+  --color-ai-surface: #f8f8fe;
+
+  --color-danger: #b73f52;
+  --color-danger-deep: #962f41;
+  --color-danger-soft: #fff0f1;
+  --color-danger-line: #f3c9cf;
+
+  --color-warn: #946318;
+  --color-warn-soft: #fff6e5;
+  --color-warn-line: #f0dfc0;
+
+  --color-info: #2f5d8a;
+  --color-info-soft: #eaf1fa;
+  --color-info-line: #cad9ea;
+
+  --color-success: #047857;
+  --color-success-soft: #ecfdf5;
+  --color-success-line: #a7f3d0;
+
+  /* Code is the only place monospace and a dark surface are allowed (KR-19). */
+  --color-code-bg: #0f172a;
+  --color-code-text: #e2e8f0;
+
+  --radius-card: 16px;
+  --radius-panel: 24px;
+  --radius-control: 10px;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    background: var(--color-canvas);
+  }
+
+  body {
+    font-family: var(--font-sans);
+    direction: rtl;
+    text-align: right;
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: rgba(8, 127, 131, 0.16);
+    color: var(--color-ink);
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+  }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #aab7c5;
+  }
+}
+
+/* ------------------------------------------------------------------ layout */
+
+.d-page {
+  width: 100%;
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 28px 32px 44px;
+}
+
+@media (max-width: 1024px) {
+  .d-page {
+    padding: 22px 20px 36px;
+  }
+}
+
+@media (max-width: 640px) {
+  .d-page {
+    padding: 18px 14px 30px;
+  }
+}
+
+.d-title {
+  font-size: 28px;
+  line-height: 1.45;
+  font-weight: 800;
+  color: var(--color-ink);
+  letter-spacing: -0.015em;
+}
+
+.d-subtitle {
+  margin-top: 6px;
+  font-size: var(--text-body);
+  line-height: 1.9;
+  color: var(--color-muted);
+}
+
+@media (max-width: 640px) {
+  .d-title {
+    font-size: 21px;
+  }
+  .d-subtitle {
+    font-size: var(--text-small);
+  }
+}
+
+.d-section-title {
+  font-size: var(--text-lead);
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.d-section-sub {
+  margin-top: 3px;
+  font-size: var(--text-caption);
+  color: var(--color-muted);
+  line-height: 1.8;
+}
+
+/* ------------------------------------------------------------------- cards */
+
+.d-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 16px;
+}
+
+.d-card-lg {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 24px;
+}
+
+.d-card-pad {
+  padding: 24px;
+}
+
+@media (max-width: 640px) {
+  .d-card-pad {
+    padding: 16px;
+  }
+}
+
+.d-stat {
+  min-height: 140px;
+  padding: 22px;
+  border-radius: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.d-stat-value {
+  font-size: 29px;
+  line-height: 1;
+  font-weight: 800;
+  color: var(--color-ink);
+  letter-spacing: -0.02em;
+}
+
+@media (max-width: 640px) {
+  .d-stat {
+    min-height: 122px;
+    padding: 16px;
+  }
+  .d-stat-value {
+    font-size: 24px;
+  }
+}
+
+.d-icon-ring {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--color-primary-line);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.d-icon-ring.ai {
+  border-color: var(--color-ai-line);
+  color: var(--color-ai);
+}
+.d-icon-ring.danger {
+  border-color: var(--color-danger-line);
+  color: var(--color-danger);
+}
+.d-icon-ring.warn {
+  border-color: var(--color-warn-line);
+  color: var(--color-warn);
+}
+.d-icon-ring.soft {
+  border-color: var(--color-line);
+  color: var(--color-muted);
+}
+
+.d-ai-card {
+  background: var(--color-ai-soft);
+  border: 1px solid var(--color-ai-line);
+  border-radius: 16px;
+}
+
+.d-soft-teal {
+  background: var(--color-primary-soft);
+  border: 1px solid var(--color-primary-line);
+  border-radius: 14px;
+}
+
+.d-soft-warn {
+  background: var(--color-warn-soft);
+  border: 1px solid var(--color-warn-line);
+  border-radius: 14px;
+}
+
+.d-soft-danger {
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger-line);
+  border-radius: 14px;
+}
+
+.d-soft-info {
+  background: var(--color-info-soft);
+  border: 1px solid var(--color-info-line);
+  border-radius: 14px;
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.d-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.d-input,
+.d-select,
+.d-textarea {
+  width: 100%;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  border-radius: 10px;
+  color: var(--color-ink);
+  font-size: var(--text-body);
+  padding: 0 13px;
+  height: 42px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.d-textarea {
+  height: auto;
+  min-height: 84px;
+  padding-top: 11px;
+  padding-bottom: 11px;
+  line-height: 1.9;
+  resize: vertical;
+}
+
+.d-input::placeholder,
+.d-textarea::placeholder {
+  color: var(--color-faint);
+}
+
+.d-input:focus,
+.d-select:focus,
+.d-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(8, 127, 131, 0.1);
+}
+
+.d-input:disabled,
+.d-select:disabled,
+.d-textarea:disabled {
+  background: var(--color-canvas);
+  color: var(--color-faint);
+  cursor: not-allowed;
+}
+
+.d-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2367768A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 12px center;
+  padding-left: 34px;
+}
+
+.d-search {
+  position: relative;
+}
+
+.d-search .d-input {
+  padding-right: 38px;
+}
+
+.d-search svg {
+  position: absolute;
+  right: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-faint);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- segments */
+
+.d-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+}
+
+.d-segment button {
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--color-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.d-segment button.active {
+  background: var(--color-primary);
+  color: var(--color-surface);
+}
+
+.d-segment button:not(.active):hover {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+.d-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font-size: var(--text-small);
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.d-chip:hover {
+  border-color: var(--color-primary-line);
+  background: var(--color-surface-muted);
+}
+
+.d-chip.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
+}
+
+.d-chip.soft {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary-line);
+  color: var(--color-primary-deep);
+}
+
+/* ------------------------------------------------------------------ tables */
+
+.d-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-small);
+}
+
+.d-table th {
+  text-align: right;
+  padding: 11px 14px;
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--color-muted);
+  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-line);
+  white-space: nowrap;
+}
+
+.d-table td {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--color-line-soft);
+  color: var(--color-ink);
+  vertical-align: middle;
+}
+
+.d-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.d-table tbody tr:hover {
+  background: var(--color-surface-muted);
+}
+
+.d-table-card {
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+}
+
+/* ------------------------------------------------------------------ charts */
+
+.d-bar-track {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-line-soft);
+  overflow: hidden;
+}
+
+.d-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary);
+  transition: width 0.4s ease;
+}
+
+.d-bar-fill.soft {
+  background: var(--color-primary-line);
+}
+
+.d-donut {
+  position: relative;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.d-donut::after {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  border-radius: 999px;
+  background: var(--color-surface);
+}
+
+/* ------------------------------------------------------------------ states */
+
+.d-empty {
+  border: 1px dashed var(--color-line-strong);
+  border-radius: 16px;
+  background: var(--color-surface-muted);
+  padding: 38px 20px;
+  text-align: center;
+}
+
+.d-empty-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.d-skeleton {
+  background: linear-gradient(90deg, var(--color-line-soft) 25%, #f7f9fb 50%, var(--color-line-soft) 75%);
+  background-size: 200% 100%;
+  animation: dShimmer 1.4s infinite linear;
+  border-radius: 8px;
+}
+
+@keyframes dShimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.d-fade {
+  animation: dFade 0.25s ease both;
+}
+
+@keyframes dFade {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ------------------------------------------------------------------- misc */
+
+.font-mono-numbers {
+  font-family: 'Vazirmatn', sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  direction: ltr;
+  display: inline-block;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.d-divider {
+  height: 1px;
+  background: var(--color-line-soft);
+}
+
+.d-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-primary);
+  font-size: var(--text-small);
+  font-weight: 600;
+  transition: color 0.15s ease;
+}
+
+.d-link:hover {
+  color: var(--color-primary-deep);
+}
+
+/* Sidebar */
+
+.d-sidebar {
+  width: 248px;
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-line);
+}
+
+@media (max-width: 1023px) {
+  .d-sidebar {
+    width: 272px;
+  }
+}
+
+.d-workspace-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-size: var(--text-caption);
+  font-weight: 700;
+}
+
+.d-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border-radius: 10px;
+  font-size: var(--text-small);
+  font-weight: 500;
+  color: var(--color-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.d-nav-item svg {
+  color: var(--color-faint);
+  flex-shrink: 0;
+}
+
+.d-nav-item:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-ink);
+}
+
+.d-nav-item:hover svg {
+  color: var(--color-muted);
+}
+
+.d-nav-item.active {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.d-nav-item.active svg {
+  color: var(--color-primary);
+}
+
+/* Agent chat surfaces */
+
+.d-chat-bubble-agent {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  color: var(--color-ink);
+  border-radius: 16px;
+  border-top-right-radius: 5px;
+  box-shadow: 0 1px 2px rgba(23, 43, 71, 0.03);
+}
+
+.d-chat-bubble-user {
+  background: var(--color-primary);
+  color: var(--color-surface);
+  border-radius: 16px;
+  border-top-left-radius: 5px;
+}
+
+/* --------------------------------------------------------- booking flow */
+
+/* A value that just changed on the appointment card. */
+.d-pop {
+  animation: dPop 0.18s ease-out both;
+}
+
+@keyframes dPop {
+  from {
+    opacity: 0.35;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .d-pop,
+  .d-fade,
+  .d-skeleton {
+    animation: none;
+  }
+}
+
+/* iOS Safari zooms the page when a focused field is under 16px. */
+@media (max-width: 639px) {
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

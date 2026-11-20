@@ -47,6 +47,30 @@ class Appointment(Base):
         nullable=True,
     )
 
+    # Front-desk flow markers. The appointment ``status`` stays the source of
+    # truth for the booking lifecycle (scheduled / completed / no_show /
+    # cancelled); these timestamps record when the patient actually moved
+    # through the clinic so the daily worklist needs no extra table.
+    checked_in_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    # Per-day, per-doctor walk-in order assigned at check-in. NULL until the
+    # patient arrives, so booked-but-not-arrived rows never occupy the queue.
+    # Two doctors share the day but not the counter: each room counts its own.
+    queue_number: Mapped[int | None] = mapped_column(
+        index=True,
+        nullable=True,
+    )
+
     dental_service: Mapped[DentalService] = relationship(
         back_populates="appointments",
     )

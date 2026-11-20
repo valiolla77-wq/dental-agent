@@ -7,7 +7,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.errors import AppError
-from app.models.appointment import Appointment
 from app.models.base import Base
 from app.models.dental_service import DentalService
 from app.models.doctor import Doctor

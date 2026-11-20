@@ -12,7 +12,6 @@ from app.models.doctor import Doctor
 from app.models.doctor_dental_service import doctor_dental_services
 from app.utils.persian_text import (
     GENERIC_SEARCH_TERMS,
-    STOPWORDS,
     canonicalize_token,
     concept_aliases,
     normalize_persian_text,

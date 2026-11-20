@@ -2,14 +2,14 @@ import unittest
 from datetime import date, datetime, time, timedelta, timezone
 from unittest.mock import patch
 
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.errors import AppError
 from app.models.appointment import Appointment
 from app.models.base import Base
-from app.models.doctor import Doctor
 from app.models.dental_service import DentalService
+from app.models.doctor import Doctor
 from app.models.doctor_schedule import DoctorSchedule
 from app.models.patient import Patient
 from app.schemas.appointment import AppointmentCreate

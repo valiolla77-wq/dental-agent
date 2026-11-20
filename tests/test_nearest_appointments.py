@@ -13,6 +13,7 @@ from app.models.dental_service import DentalService
 from app.models.doctor import Doctor
 from app.models.doctor_schedule import DoctorSchedule
 from app.models.patient import Patient
+from app.models.user import User
 from app.services import appointment_service, dental_service_service
 from app.utils.date_utils import jalali_to_gregorian
 
@@ -23,6 +24,14 @@ class NearestAppointmentSearchTests(unittest.IsolatedAsyncioTestCase):
         async with self.engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
         self.factory = async_sessionmaker(self.engine, expire_on_commit=False)
+        self.actor = User(
+            id=1,
+            full_name="Nearest Probe",
+            phone="09900000006",
+            password_hash="unused",
+            role="receptionist",
+            is_active=True,
+        )
         async with self.factory() as db:
             self.cleaning = DentalService(
                 name="جرم‌گیری تست",
@@ -189,6 +198,7 @@ class NearestAppointmentSearchTests(unittest.IsolatedAsyncioTestCase):
                 service_id=self.cleaning_id,
                 days=30,
                 limit=2,
+                actor=self.actor,
             )
         self.assertTrue(result.ok)
         self.assertEqual(result.data.search_days, 30)

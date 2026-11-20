@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agent import TOOL_REGISTRY, agent_graph, create_initial_state
+from app.errors import AppError
 from app.models.agent_confirmation import AgentConfirmation
 from app.models.appointment import Appointment
 from app.models.base import Base
@@ -178,7 +179,12 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["final_response"], "سلام، چطور کمک کنم؟")
         self.assertEqual(len(model.received), 1)
-        self.assertNotIn("db", repr(model.received[0]))
+        # No database/session internals may leak into the model messages. The
+        # check is specific because the word "db" legitimately occurs inside
+        # the tool name ``submit_feedback``.
+        representation = repr(model.received[0])
+        for marker in ("AsyncSession", "sqlalchemy", "object at 0x"):
+            self.assertNotIn(marker, representation)
 
     async def test_read_tool_is_selected_and_tool_result_returns_to_llm(self):
         model = FakeChatModel(
@@ -226,6 +232,23 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["last_tool_error"].code, "INTERNAL_ERROR")
         self.assertNotIn(secret_marker, result["final_response"])
         self.assertNotIn(secret_marker, "\n".join(captured.output))
+
+    async def test_provider_rate_limit_surfaces_retryable_app_error(self):
+        class RateLimitError(Exception):
+            status_code = 429
+
+        class ThrottledChatModel:
+            def bind_tools(self, _tool_schemas):
+                return self
+
+            async def ainvoke(self, _messages):
+                raise RateLimitError("provider says slow down")
+
+        with self.assertRaises(AppError) as raised:
+            await self._invoke(create_initial_state(), ThrottledChatModel())
+
+        self.assertEqual(raised.exception.code, "AGENT_PROVIDER_RATE_LIMITED")
+        self.assertEqual(raised.exception.status_code, 503)
 
     async def test_llm_can_call_multiple_tools_in_sequence(self):
         model = FakeChatModel(
@@ -288,7 +311,7 @@ class AgentGraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("لغو نوبت", prompt)
         self.assertIn(self.doctor.full_name, prompt)
         self.assertIn(self.service.name, prompt)
-        self.assertIn("ساعت 10:00", prompt)
+        self.assertIn("ساعت ۱۰:۰۰", prompt)
         self.assertIsNone(result["last_tool_result"])
         async with self.session_factory() as db:
             stored = await db.get(Appointment, self.appointment.id)

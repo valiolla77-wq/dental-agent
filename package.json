@@ -1,0 +1,19 @@
+{
+  "name": "dental-agent",
+  "version": "1.0.0",
+  "description": "سامانه مدیریت کلینیک دندان‌پزشکی (FastAPI + SQLAlchemy Async + SQLite) با **دستیار هوش مصنوعی عامل‌محور** فارسی (LangChain/LangGraph) و **وب‌سایت نقش‌محور** (ورود واحد، داشبورد، بیماران، نوبت‌ها، پزشکان/خدمات/برنامه‌ها، کاربران و پنل گفت‌وگوی دستیار).",
+  "scripts": {
+    "test:ui": "node tests/ui/app_smoke.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/valiolla77-wq/dental-agent.git"
+  },
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/valiolla77-wq/dental-agent/issues"
+  },
+  "homepage": "https://github.com/valiolla77-wq/dental-agent#readme",
+  "private": true
+}

@@ -17,6 +17,7 @@ from app.models.dental_service import DentalService
 from app.models.doctor import Doctor
 from app.models.doctor_schedule import DoctorSchedule
 from app.models.patient import Patient
+from app.models.user import User
 from app.services import appointment_service
 from app.utils.date_utils import gregorian_to_jalali
 
@@ -29,6 +30,14 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         self.session_factory = async_sessionmaker(
             self.engine,
             expire_on_commit=False,
+        )
+        self.actor = User(
+            id=1,
+            full_name="Tool Probe",
+            phone="09900000001",
+            password_hash="unused",
+            role="receptionist",
+            is_active=True,
         )
         self.target_date = date(2026, 10, 10)
         self.appointment_date = gregorian_to_jalali(
@@ -109,7 +118,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_search_returns_active_services_with_minimal_fields(self):
         async with self.session_factory() as db:
-            result = await search_dental_services(db, " جرم ")
+            result = await search_dental_services(db, " جرم ", actor=self.actor)
 
         self.assertTrue(result.ok)
         self.assertEqual([item.name for item in result.data], ["جرم‌گیری نمونه"])
@@ -120,7 +129,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_search_without_query_excludes_inactive_services(self):
         async with self.session_factory() as db:
-            result = await search_dental_services(db)
+            result = await search_dental_services(db, actor=self.actor)
 
         self.assertTrue(result.ok)
         self.assertEqual(
@@ -133,7 +142,9 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         sensitive_query = "نمونهٔ محرمانهٔ جستجو"
         async with self.session_factory() as db:
             with self.assertLogs("dental_agent.agent_tools", level="INFO") as logs:
-                await search_dental_services(db, sensitive_query)
+                await search_dental_services(
+                    db, sensitive_query, actor=self.actor
+                )
 
         combined_logs = "\n".join(logs.output)
         self.assertIn("Agent tool started", combined_logs)
@@ -142,7 +153,9 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_tool_input_returns_catalogued_validation_error(self):
         async with self.session_factory() as db:
-            result = await search_dental_services(db, "x" * 151)
+            result = await search_dental_services(
+                db, "x" * 151, actor=self.actor
+            )
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "COMMON_VALIDATION_ERROR")
@@ -150,7 +163,9 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_find_doctors_returns_only_active_providers(self):
         async with self.session_factory() as db:
-            result = await find_doctors_for_service(db, self.service.id)
+            result = await find_doctors_for_service(
+                db, self.service.id, actor=self.actor
+            )
 
         self.assertTrue(result.ok)
         self.assertEqual([item.id for item in result.data], [self.doctor.id])
@@ -161,14 +176,16 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_inactive_service_has_no_selectable_doctors(self):
         async with self.session_factory() as db:
-            result = await find_doctors_for_service(db, self.inactive_service.id)
+            result = await find_doctors_for_service(
+                db, self.inactive_service.id, actor=self.actor
+            )
 
         self.assertTrue(result.ok)
         self.assertEqual(result.data, [])
 
     async def test_missing_service_is_reported_with_catalog_code(self):
         async with self.session_factory() as db:
-            result = await find_doctors_for_service(db, 999)
+            result = await find_doctors_for_service(db, 999, actor=self.actor)
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "DENTAL_SERVICE_NOT_FOUND")
@@ -189,6 +206,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
                 service_id=self.service.id,
                 doctor_id=self.doctor.id,
                 appointment_date=self.appointment_date,
+                actor=self.actor,
             )
 
         self.assertTrue(result.ok)
@@ -214,6 +232,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
                 self.service.id,
                 self.doctor.id,
                 self.appointment_date,
+                actor=self.actor,
             )
 
         self.assertIn("11:00", result.data.available_slots)
@@ -225,6 +244,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
                 self.other_service.id,
                 self.doctor.id,
                 self.appointment_date,
+                actor=self.actor,
             )
 
         self.assertFalse(result.ok)
@@ -240,6 +260,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
                 self.inactive_service.id,
                 self.doctor.id,
                 self.appointment_date,
+                actor=self.actor,
             )
 
         self.assertFalse(result.ok)
@@ -252,6 +273,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
                 self.service.id,
                 self.doctor.id,
                 "not-a-date",
+                actor=self.actor,
             )
 
         self.assertFalse(result.ok)
@@ -270,7 +292,9 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
             db.add(appointment)
             await db.commit()
         async with self.session_factory() as db:
-            result = await get_patient_appointments(db, self.patient.id)
+            result = await get_patient_appointments(
+                db, self.patient.id, actor=self.actor
+            )
 
         self.assertTrue(result.ok)
         self.assertEqual(len(result.data), 1)
@@ -281,14 +305,16 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_patient_is_reported_with_catalog_code(self):
         async with self.session_factory() as db:
-            result = await get_patient_appointments(db, 999)
+            result = await get_patient_appointments(
+                db, 999, actor=self.actor
+            )
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "PATIENT_NOT_FOUND")
 
     async def test_nonpositive_identifier_returns_validation_error(self):
         async with self.session_factory() as db:
-            result = await find_doctors_for_service(db, 0)
+            result = await find_doctors_for_service(db, 0, actor=self.actor)
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "COMMON_VALIDATION_ERROR")
@@ -303,7 +329,9 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
                     "dental_agent.agent_tools",
                     level="ERROR",
                 ):
-                    result = await search_dental_services(db)
+                    result = await search_dental_services(
+                        db, actor=self.actor
+                    )
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "DATABASE_ERROR")
@@ -319,7 +347,9 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
                     "dental_agent.agent_tools",
                     level="ERROR",
                 ):
-                    result = await search_dental_services(db)
+                    result = await search_dental_services(
+                        db, actor=self.actor
+                    )
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "INTERNAL_ERROR")

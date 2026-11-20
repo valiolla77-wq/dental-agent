@@ -44,6 +44,8 @@ class AgentState(TypedDict, total=False):
     last_tool_result: dict[str, Any] | None
     last_tool_error: AgentToolError | None
     last_tool_name: str | None
+    # Trusted server-only row id used for success text; never sent to the model.
+    last_internal_appointment_id: int | None
     confirmation_required: bool
     confirmation_status: Literal["not_required", "pending", "approved", "rejected"]
     confirmation_token: str | None
@@ -86,6 +88,7 @@ def create_initial_state(
         last_tool_result=None,
         last_tool_error=None,
         last_tool_name=None,
+        last_internal_appointment_id=None,
         confirmation_required=False,
         confirmation_status="not_required",
         confirmation_token=None,

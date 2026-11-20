@@ -1,1 +1,1 @@
-"""Create demo-only data in ``demo.db``. Never touches production data."""
+"""Create local sample data in ``sample.db``. Never touches production data."""

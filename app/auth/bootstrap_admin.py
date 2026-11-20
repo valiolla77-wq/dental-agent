@@ -8,11 +8,12 @@ import argparse
 import asyncio
 import getpass
 import sys
+
 from sqlalchemy import select
 
+from app.auth.security import hash_password
 from app.database import SessionLocal, init_db
 from app.models.user import User
-from app.auth.security import hash_password
 
 
 async def create_admin_user(phone: str, password: str) -> bool:
@@ -62,7 +63,7 @@ async def create_admin_user(phone: str, password: str) -> bool:
         await db.commit()
         await db.refresh(admin)
 
-        print(f"Admin user created successfully:")
+        print("Admin user created successfully:")
         print(f"  ID: {admin.id}")
         print(f"  Name: {admin.full_name}")
         print(f"  Phone: {admin.phone}")

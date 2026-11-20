@@ -13,7 +13,7 @@ from datetime import datetime, time
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from sqlalchemy import func, inspect, select, text
+from sqlalchemy import inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
