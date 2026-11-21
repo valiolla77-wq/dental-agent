@@ -8,6 +8,10 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: React.ReactNode;
 }
 
+/**
+ * The paper system has no elevation: a button is a stamp, not a bubble.
+ * Primary is the only filled variant; everything else is a hairline.
+ */
 export const Button: React.FC<ButtonProps> = ({
   children,
   variant = 'primary',
@@ -19,26 +23,23 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const base =
-    'inline-flex items-center justify-center font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-1 disabled:opacity-50 disabled:pointer-events-none rounded-[10px] whitespace-nowrap shrink-0';
+    'inline-flex items-center justify-center font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-1 focus-visible:ring-offset-canvas disabled:opacity-50 disabled:pointer-events-none rounded-[3px] whitespace-nowrap shrink-0';
 
   const variants = {
-    primary:
-      'bg-primary text-on-accent hover:bg-primary-deep active:bg-[#075A5D] shadow-[0_1px_2px_rgba(8,127,131,0.16)]',
-    teal:
-      'bg-primary text-on-accent hover:bg-primary-deep active:bg-[#075A5D] shadow-[0_1px_2px_rgba(8,127,131,0.16)]',
-    secondary:
-      'bg-primary-soft text-primary-deep border border-primary-line hover:bg-primary-hover',
+    primary: 'bg-primary text-on-accent hover:bg-primary-deep',
+    teal: 'bg-primary text-on-accent hover:bg-primary-deep',
+    secondary: 'bg-primary-soft text-primary-deep border border-primary-line hover:bg-primary-hover',
     outline:
-      'border border-line text-ink bg-surface hover:bg-surface-muted hover:border-primary-line',
-    danger: 'bg-danger text-on-accent hover:bg-[#A03547]',
-    ghost: 'text-muted hover:bg-canvas hover:text-ink',
-    ai: 'bg-ai text-on-accent hover:bg-[#5351A6]',
+      'border border-line text-ink bg-surface hover:bg-surface-muted hover:border-line-strong',
+    danger: 'bg-danger text-on-accent hover:bg-danger-deep',
+    ghost: 'text-muted hover:bg-surface-muted hover:text-ink',
+    ai: 'bg-ai text-on-accent hover:bg-[#4b3f66]',
   };
 
   const sizes = {
     sm: 'text-small px-3 gap-1.5 h-8',
-    md: 'text-small px-4 gap-2 h-10',
-    lg: 'text-body px-5 gap-2 h-11',
+    md: 'text-small px-3.5 gap-2 h-9',
+    lg: 'text-body px-4.5 gap-2 h-10',
   };
 
   return (

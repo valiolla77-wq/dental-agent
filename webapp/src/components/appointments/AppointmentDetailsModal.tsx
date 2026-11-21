@@ -243,7 +243,7 @@ export const AppointmentDetailsModal: React.FC<AppointmentDetailsModalProps> = (
 
         {mode === 'view' && (
           <>
-            <div className="flex items-center justify-between gap-3 p-4 rounded-[14px] bg-surface-muted border border-line">
+            <div className="flex items-center justify-between gap-3 p-4 rounded-[4px] bg-surface-muted border border-line">
               <div>
                 <div className="text-caption text-faint">وضعیت نوبت</div>
                 <div className="mt-1.5">
@@ -276,7 +276,7 @@ export const AppointmentDetailsModal: React.FC<AppointmentDetailsModalProps> = (
               ].map((item) => {
                 const Icon = item.icon;
                 return (
-                  <div key={item.label} className="rounded-[12px] border border-line p-3.5">
+                  <div key={item.label} className="rounded-[4px] border border-line p-3.5">
                     <div className="flex items-center gap-1.5 text-caption text-faint">
                       <Icon className="w-3.5 h-3.5" />
                       {item.label}
@@ -290,7 +290,7 @@ export const AppointmentDetailsModal: React.FC<AppointmentDetailsModalProps> = (
             </div>
 
             {appointment.reason && (
-              <div className="rounded-[12px] border border-line p-3.5">
+              <div className="rounded-[4px] border border-line p-3.5">
                 <div className="text-caption text-faint mb-1">توضیحات و علت مراجعه</div>
                 <p className="text-caption text-muted leading-6">{appointment.reason}</p>
               </div>
@@ -304,7 +304,7 @@ export const AppointmentDetailsModal: React.FC<AppointmentDetailsModalProps> = (
             )}
 
             {canRateVisit && (
-              <div className="rounded-[14px] border border-ai-line bg-ai-surface p-4">
+              <div className="rounded-[4px] border border-ai-line bg-ai-surface p-4">
                 <div className="flex items-center gap-2 text-small font-bold text-ai">
                   <Star className="w-4 h-4" />
                   این ویزیت چطور بود؟
@@ -386,7 +386,7 @@ export const AppointmentDetailsModal: React.FC<AppointmentDetailsModalProps> = (
                     >
                       <Star
                         className={`w-8 h-8 transition-colors ${
-                          filled ? 'text-[#F0B429] fill-[#F0B429]' : 'text-[#D7DEE6]'
+                          filled ? 'text-warn fill-[#8a6416]' : 'text-line-strong'
                         }`}
                       />
                     </button>
@@ -405,7 +405,7 @@ export const AppointmentDetailsModal: React.FC<AppointmentDetailsModalProps> = (
               placeholder="نظر شما (اختیاری)"
               rows={3}
               maxLength={2000}
-              className="w-full rounded-[12px] border border-line bg-surface px-3 py-2.5 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="w-full rounded-[4px] border border-line bg-surface px-3 py-2.5 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
 
             <div className="flex items-center justify-end gap-2">
@@ -485,7 +485,7 @@ export const AppointmentDetailsModal: React.FC<AppointmentDetailsModalProps> = (
                         setDateIso(day.iso);
                         setTime('');
                       }}
-                      className={`shrink-0 w-[62px] rounded-[12px] border py-2.5 text-center transition-colors ${
+                      className={`shrink-0 w-[62px] rounded-[4px] border py-2.5 text-center transition-colors ${
                         active
                           ? 'bg-primary border-primary text-on-accent'
                           : 'bg-surface border-line text-muted hover:border-primary-line'
@@ -525,7 +525,7 @@ export const AppointmentDetailsModal: React.FC<AppointmentDetailsModalProps> = (
               {slotsLoading ? (
                 <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                   {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((item) => (
-                    <div key={item} className="d-skeleton h-9 rounded-[9px]" />
+                    <div key={item} className="d-skeleton h-9 rounded-[3px]" />
                   ))}
                 </div>
               ) : slotsError ? (
@@ -548,7 +548,7 @@ export const AppointmentDetailsModal: React.FC<AppointmentDetailsModalProps> = (
                       key={slot}
                       type="button"
                       onClick={() => setTime(slot)}
-                      className={`h-9 rounded-[9px] border text-small font-semibold tabular-nums transition-colors ${
+                      className={`h-9 rounded-[3px] border text-small font-semibold tabular-nums transition-colors ${
                         time === slot
                           ? 'bg-primary border-primary text-on-accent'
                           : 'bg-surface border-line text-ink hover:border-primary-line'

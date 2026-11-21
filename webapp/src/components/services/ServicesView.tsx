@@ -37,7 +37,7 @@ export const ServicesView: React.FC = () => {
         {services.map((service) => (
           <div
             key={service.id}
-            className="bg-surface rounded-xl border border-line shadow-2xs p-5 flex flex-col justify-between space-y-4"
+            className="bg-surface rounded-[3px] border border-line p-5 flex flex-col justify-between space-y-4"
           >
             <div className="space-y-3">
               <div className="flex items-start justify-between gap-2">

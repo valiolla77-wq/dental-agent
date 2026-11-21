@@ -103,7 +103,7 @@ export const AgentDrawer: React.FC = () => {
       />
 
       <div className="fixed inset-y-0 left-0 max-w-full flex">
-        <div className="w-screen max-w-[440px] bg-surface shadow-[24px_0_80px_-24px_rgba(23,43,71,0.35)] border-r border-line flex flex-col">
+        <div className="w-screen max-w-[440px] bg-surface shadow-[0_0_40px_rgba(20,16,12,0.18)] border-r border-line flex flex-col">
           {/* Header */}
           <div className="px-4 py-4 border-b border-line-soft flex items-center justify-between gap-3 bg-surface">
             <div className="flex items-center gap-2.5 min-w-0">
@@ -134,7 +134,7 @@ export const AgentDrawer: React.FC = () => {
                     recordFormRequired ? closeSelfRecordForm() : openSelfRecordForm()
                   }
                   title={recordFormRequired ? 'بستن فرم بیمار' : 'افزودن بیمار'}
-                  className="p-2 text-primary hover:bg-primary-soft rounded-[8px] transition-colors"
+                  className="p-2 text-primary hover:bg-primary-soft rounded-[3px] transition-colors"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
                 </button>
@@ -143,14 +143,14 @@ export const AgentDrawer: React.FC = () => {
                 type="button"
                 onClick={clearAgentChat}
                 title="شروع مجدد گفتگو"
-                className="p-2 text-faint hover:text-ink hover:bg-canvas rounded-[8px] transition-colors"
+                className="p-2 text-faint hover:text-ink hover:bg-canvas rounded-[3px] transition-colors"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
                 onClick={() => setAgentDrawerOpen(false)}
-                className="p-2 text-faint hover:text-ink hover:bg-canvas rounded-[8px] transition-colors"
+                className="p-2 text-faint hover:text-ink hover:bg-canvas rounded-[3px] transition-colors"
                 aria-label="بستن دستیار"
               >
                 <X className="w-4 h-4" />
@@ -198,7 +198,7 @@ export const AgentDrawer: React.FC = () => {
                     }`}
                   >
                     {message.error && (
-                      <div className="mb-2 px-2 py-1.5 rounded-[7px] bg-danger-soft border border-danger-line text-caption text-danger flex items-start gap-1.5">
+                      <div className="mb-2 px-2 py-1.5 rounded-[3px] bg-danger-soft border border-danger-line text-caption text-danger flex items-start gap-1.5">
                         <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
                         <div className="min-w-0">
                           <span>{message.error}</span>
@@ -207,7 +207,7 @@ export const AgentDrawer: React.FC = () => {
                               type="button"
                               onClick={() => retryLastAgentMessage()}
                               disabled={isAgentTyping}
-                              className="mt-1.5 inline-flex items-center gap-1 rounded-[6px] border border-danger-line bg-surface px-2 py-1 text-caption font-semibold text-danger-deep hover:bg-danger-soft disabled:opacity-50"
+                              className="mt-1.5 inline-flex items-center gap-1 rounded-[3px] border border-danger-line bg-surface px-2 py-1 text-caption font-semibold text-danger-deep hover:bg-danger-soft disabled:opacity-50"
                             >
                               <RotateCcw className="w-2.5 h-2.5" />
                               تلاش دوباره
@@ -331,7 +331,7 @@ export const AgentDrawer: React.FC = () => {
                   onKeyDown={handleKeyDown}
                   placeholder="پیام یا دستور خود را بنویسید…"
                   rows={1}
-                  className="flex-1 resize-none bg-surface-muted border border-line rounded-[10px] text-caption text-ink placeholder:text-faint px-3 py-2.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 min-h-[40px] max-h-24"
+                  className="flex-1 resize-none bg-surface-muted border border-line rounded-[3px] text-caption text-ink placeholder:text-faint px-3 py-2.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 min-h-[40px] max-h-24"
                   dir="rtl"
                 />
                 <Button

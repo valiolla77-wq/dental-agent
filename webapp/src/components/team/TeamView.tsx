@@ -83,7 +83,7 @@ export const TeamView: React.FC<TeamViewProps> = ({ onNavigate }) => {
         }
       />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-5">
+      <div className="d-stat-band grid grid-cols-2 xl:grid-cols-4 mb-5">
         <StatCard
           icon={<Stethoscope className="w-[18px] h-[18px]" />}
           label="پزشکان فعال"
@@ -150,7 +150,7 @@ export const TeamView: React.FC<TeamViewProps> = ({ onNavigate }) => {
               <article key={doctor.id} className="d-card p-5 flex flex-col hover:border-primary-line transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-12 h-12 rounded-full bg-primary-soft border border-primary-line text-primary-deep flex items-center justify-center text-[17px] font-extrabold shrink-0">
+                    <div className="w-12 h-12 rounded-[3px] bg-surface-muted border border-line text-ink-soft flex items-center justify-center text-[17px] font-extrabold shrink-0">
                       {doctor.full_name.charAt(0)}
                     </div>
                     <div className="min-w-0">

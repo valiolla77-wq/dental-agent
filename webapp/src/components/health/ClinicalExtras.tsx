@@ -35,7 +35,7 @@ const FDI_OPTIONS = Array.from({ length: 32 }, (_, index) => {
 });
 
 const inputClass =
-  'h-9 rounded-[9px] border border-line bg-surface px-3 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30';
+  'h-9 rounded-[3px] border border-line bg-surface px-3 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30';
 
 interface PanelProps {
   patientId: number;
@@ -129,7 +129,7 @@ export const TreatmentPlanPanel: React.FC<
       )}
 
       {canWrite && formOpen && (
-        <div className="rounded-[12px] border border-primary-line bg-[#FBFDFD] p-4 space-y-3 mb-4">
+        <div className="rounded-[4px] border border-primary-line bg-[#fbf8f2] p-4 space-y-3 mb-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <input
               value={title}
@@ -158,7 +158,7 @@ export const TreatmentPlanPanel: React.FC<
             placeholder="توضیح کوتاه (اختیاری)"
             rows={2}
             maxLength={2000}
-            className="w-full rounded-[9px] border border-line bg-surface px-3 py-2 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="w-full rounded-[3px] border border-line bg-surface px-3 py-2 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
           <div className="flex items-center gap-2">
             <Button
@@ -183,7 +183,7 @@ export const TreatmentPlanPanel: React.FC<
       )}
 
       {items.length === 0 ? (
-        <div className="rounded-[12px] border border-dashed border-line p-5 text-center">
+        <div className="rounded-[4px] border border-dashed border-line p-5 text-center">
           <ClipboardList className="w-5 h-5 text-faint mx-auto mb-2" />
           <p className="text-caption text-muted">
             هنوز درمانی در طرح درمان ثبت نشده است.
@@ -196,7 +196,7 @@ export const TreatmentPlanPanel: React.FC<
             return (
               <div
                 key={item.id}
-                className={`rounded-[12px] border p-3.5 ${
+                className={`rounded-[4px] border p-3.5 ${
                   item.status === 'completed'
                     ? 'border-line bg-surface-muted'
                     : 'border-line-soft bg-surface'
@@ -226,7 +226,7 @@ export const TreatmentPlanPanel: React.FC<
                     </Badge>
                     {canWrite && item.status !== 'completed' && item.status !== 'cancelled' && (
                       <select
-                        className="h-8 rounded-[8px] border border-line bg-surface px-2 text-caption text-ink"
+                        className="h-8 rounded-[3px] border border-line bg-surface px-2 text-caption text-ink"
                         value={item.status}
                         disabled={updatingId === item.id}
                         onChange={(event) =>
@@ -341,7 +341,7 @@ export const PrescriptionsPanel: React.FC<
       )}
 
       {canWrite && formOpen && (
-        <div className="rounded-[12px] border border-primary-line bg-[#FBFDFD] p-4 space-y-3 mb-4">
+        <div className="rounded-[4px] border border-primary-line bg-[#fbf8f2] p-4 space-y-3 mb-4">
           {lines.map((line, index) => (
             <div key={index} className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               <input
@@ -385,7 +385,7 @@ export const PrescriptionsPanel: React.FC<
                         current.filter((_, lineIndex) => lineIndex !== index)
                       )
                     }
-                    className="p-2 text-danger hover:bg-danger-soft rounded-[8px]"
+                    className="p-2 text-danger hover:bg-danger-soft rounded-[3px]"
                     aria-label="حذف دارو"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -408,7 +408,7 @@ export const PrescriptionsPanel: React.FC<
             placeholder="توضیح/توصیه (اختیاری)"
             rows={2}
             maxLength={2000}
-            className="w-full rounded-[9px] border border-line bg-surface px-3 py-2 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="w-full rounded-[3px] border border-line bg-surface px-3 py-2 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
           <div className="flex items-center gap-2">
             <Button
@@ -433,7 +433,7 @@ export const PrescriptionsPanel: React.FC<
       )}
 
       {items.length === 0 ? (
-        <div className="rounded-[12px] border border-dashed border-line p-5 text-center">
+        <div className="rounded-[4px] border border-dashed border-line p-5 text-center">
           <Pill className="w-5 h-5 text-faint mx-auto mb-2" />
           <p className="text-caption text-muted">هنوز نسخه‌ای صادر نشده است.</p>
         </div>
@@ -442,7 +442,7 @@ export const PrescriptionsPanel: React.FC<
           {items.map((prescription) => (
             <div
               key={prescription.id}
-              className="rounded-[12px] border border-line-soft bg-surface p-3.5"
+              className="rounded-[4px] border border-line-soft bg-surface p-3.5"
             >
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="text-caption text-faint">
@@ -475,7 +475,7 @@ export const PrescriptionsPanel: React.FC<
                 ))}
               </ul>
               {prescription.notes && (
-                <p className="text-caption text-muted leading-6 mt-2 bg-surface-muted rounded-[10px] border border-line-soft p-2.5">
+                <p className="text-caption text-muted leading-6 mt-2 bg-surface-muted rounded-[3px] border border-line-soft p-2.5">
                   {prescription.notes}
                 </p>
               )}

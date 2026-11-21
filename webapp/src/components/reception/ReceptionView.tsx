@@ -185,7 +185,7 @@ export const ReceptionView: React.FC = () => {
               type="button"
               onClick={() => void load()}
               disabled={loading}
-              className="p-2 rounded-[9px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
+              className="p-2 rounded-[3px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
               aria-label="به‌روزرسانی پذیرش"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -238,8 +238,8 @@ export const ReceptionView: React.FC = () => {
               }
               className={`d-stat text-right transition-colors ${
                 statusFilter === card.key
-                  ? 'border-primary ring-1 ring-primary/20'
-                  : 'hover:border-primary-line'
+                  ? 'bg-primary-soft border-primary-line'
+                  : 'hover:bg-[#fbf8f2]'
               }`}
             >
               <div className="flex items-start justify-between gap-3">
@@ -320,7 +320,7 @@ export const ReceptionView: React.FC = () => {
             <h4 className="text-body font-bold text-ink mb-1">
               برای این نمای امروز نوبتی نیست
             </h4>
-            <p className="text-small text-muted leading-6 max-w-md">
+            <p className="text-small text-muted leading-6 max-w-md mx-auto">
               با پاک کردن فیلترها یا رفتن به بخش نوبت‌ها، نوبت جدید ثبت کنید.
             </p>
           </div>
@@ -351,7 +351,7 @@ export const ReceptionView: React.FC = () => {
                     </div>
                     {item.queue_number ? (
                       <span
-                        className="inline-flex flex-col items-center justify-center w-10 h-10 rounded-full bg-primary-soft border border-primary-line text-primary-deep text-caption font-extrabold"
+                        className="inline-flex flex-col items-center justify-center w-10 h-10 rounded-[3px] bg-surface-muted border border-line text-ink-soft text-caption font-extrabold"
                         title="شماره صف امروز"
                       >
                         <UserRound className="w-3 h-3" />

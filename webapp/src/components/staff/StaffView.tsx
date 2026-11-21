@@ -516,7 +516,7 @@ const IconAction: React.FC<{
     aria-label={title}
     disabled={disabled}
     onClick={onClick}
-    className={`p-2 rounded-[9px] transition-colors disabled:opacity-30 disabled:pointer-events-none ${
+    className={`p-2 rounded-[3px] transition-colors disabled:opacity-30 disabled:pointer-events-none ${
       danger
         ? 'text-faint hover:text-danger hover:bg-danger-soft'
         : 'text-faint hover:text-primary hover:bg-primary-soft'

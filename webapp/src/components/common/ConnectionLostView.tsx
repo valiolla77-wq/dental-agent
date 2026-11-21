@@ -22,7 +22,7 @@ export const ConnectionLostView: React.FC<ConnectionLostViewProps> = ({ onRetry 
 
   return (
     <div className="min-h-screen bg-canvas flex items-center justify-center px-4" dir="rtl">
-      <div className="w-full max-w-[400px] rounded-[16px] border border-line bg-surface p-7 text-center">
+      <div className="w-full max-w-[400px] rounded-[4px] border border-line bg-surface p-7 text-center">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-danger-soft text-danger">
           <WifiOff className="h-5 w-5" aria-hidden="true" />
         </div>

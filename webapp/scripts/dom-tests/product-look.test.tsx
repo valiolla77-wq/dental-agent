@@ -77,7 +77,7 @@ describe('the product has no demo look', () => {
 
   it('header: shows nothing about the connection while the server is reachable', async () => {
     setContexts('connected');
-    await render(<Header onOpenMobileMenu={() => {}} onNavigate={() => {}} />);
+    await render(<Header currentView="dashboard" onSelectView={() => {}} onOpenMobileMenu={() => {}} />);
     for (const word of FORBIDDEN) {
       assert.ok(!text().includes(word), `header must not contain «${word}»`);
     }
@@ -87,9 +87,9 @@ describe('the product has no demo look', () => {
 
   it('header: a down server is announced and the pill re-checks on click', async () => {
     const { refreshHealth } = setContexts('disconnected');
-    await render(<Header onOpenMobileMenu={() => {}} onNavigate={() => {}} />);
+    await render(<Header currentView="dashboard" onSelectView={() => {}} onOpenMobileMenu={() => {}} />);
     const pill = Array.from(document.querySelectorAll('button')).find((b) =>
-      (b.textContent || '').includes('ارتباط با سرور قطع است')
+      (b.getAttribute('aria-label') || '').includes('ارتباط با سرور قطع است')
     );
     assert.ok(pill, 'connection pill is shown');
     await act(async () => {

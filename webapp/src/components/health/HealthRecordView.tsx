@@ -36,7 +36,7 @@ const KIND_META: Record<
   },
   note: {
     label: 'یادداشت پزشک',
-    chip: 'bg-[#EEF4FB] text-info border-[#D7E4F4]',
+    chip: 'bg-info-soft text-info border-info-line',
     icon: Info,
   },
 };
@@ -123,7 +123,7 @@ export const HealthRecordView: React.FC = () => {
             type="button"
             onClick={() => void load()}
             disabled={loading}
-            className="p-2 rounded-[9px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
+            className="p-2 rounded-[3px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
             aria-label="به‌روزرسانی پرونده"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -173,7 +173,7 @@ export const HealthRecordView: React.FC = () => {
 
           {/* Allergy alerts stay on top — they are safety-critical */}
           {allergies.length > 0 && (
-            <div className="rounded-[16px] border border-danger-line bg-danger-soft p-4">
+            <div className="rounded-[4px] border border-danger-line bg-danger-soft p-4">
               <div className="flex items-center gap-2 text-small font-bold text-danger">
                 <AlertTriangle className="w-4 h-4" />
                 هشدار حساسیت ({toPersianDigits(allergies.length)} مورد)
@@ -207,7 +207,7 @@ export const HealthRecordView: React.FC = () => {
             <DentalChartLegend />
 
             {selectedTooth && (
-              <div className="mt-4 rounded-[12px] border border-line bg-surface-muted p-4">
+              <div className="mt-4 rounded-[4px] border border-line bg-surface-muted p-4">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="text-small font-bold text-ink">
                     دندان {toPersianDigits(selectedTooth)}
@@ -268,11 +268,11 @@ export const HealthRecordView: React.FC = () => {
                     return (
                       <div
                         key={entry.id}
-                        className="rounded-[12px] border border-line-soft bg-surface p-4 hover:border-primary-line transition-colors"
+                        className="rounded-[4px] border border-line-soft bg-surface p-4 hover:border-primary-line transition-colors"
                       >
                         <div className="flex items-start justify-between gap-3 flex-wrap">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className={`w-8 h-8 rounded-[10px] border flex items-center justify-center shrink-0 ${meta.chip}`}>
+                            <span className={`w-8 h-8 rounded-[3px] border flex items-center justify-center shrink-0 ${meta.chip}`}>
                               <Icon className="w-4 h-4" />
                             </span>
                             <div className="min-w-0">
@@ -295,7 +295,7 @@ export const HealthRecordView: React.FC = () => {
                           </span>
                         </div>
                         {entry.body && (
-                          <p className="text-caption text-muted leading-6 mt-3 bg-surface-muted rounded-[10px] border border-line-soft p-3">
+                          <p className="text-caption text-muted leading-6 mt-3 bg-surface-muted rounded-[3px] border border-line-soft p-3">
                             {entry.body}
                           </p>
                         )}
@@ -332,7 +332,7 @@ export const HealthRecordView: React.FC = () => {
             </div>
           </SectionCard>
 
-          <div className="d-soft-teal rounded-[14px] px-4 py-3.5 flex items-start gap-2.5">
+          <div className="d-soft-teal rounded-[4px] px-4 py-3.5 flex items-start gap-2.5">
             <Sparkles className="w-4 h-4 text-primary-deep shrink-0 mt-0.5" />
             <p className="text-caption text-primary-deep leading-5">
               محتوای این صفحه صرفاً سابقه درمانی ثبت‌شده کلینیک است و جایگزین

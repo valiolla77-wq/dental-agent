@@ -135,44 +135,24 @@ export const AppointmentsView: React.FC = () => {
         }
       />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-5">
+      <div className="d-stat-band grid grid-cols-2 xl:grid-cols-4 mb-5">
         {[
-          {
-            label: 'نوبت‌های این هفته',
-            value: weekAppointments.length,
-            icon: CalendarDays,
-          },
-          {
-            label: 'نوبت‌های امروز',
-            value: todayAppointments.length,
-            icon: Clock,
-          },
+          { label: 'نوبت‌های این هفته', value: weekAppointments.length },
+          { label: 'نوبت‌های امروز', value: todayAppointments.length },
           {
             label: 'تکمیل‌شده',
             value: baseAppointments.filter((appointment) => appointment.status === 'completed').length,
-            icon: UserRound,
           },
           {
             label: 'لغوشده',
             value: baseAppointments.filter((appointment) => appointment.status === 'cancelled').length,
-            icon: Stethoscope,
           },
-        ].map((item) => {
-          const Icon = item.icon;
-          return (
-            <div key={item.label} className="d-card p-4 flex items-center gap-3">
-              <span className="d-icon-ring">
-                <Icon className="w-4 h-4" />
-              </span>
-              <div>
-                <div className="text-caption text-muted">{item.label}</div>
-                <div className="text-[19px] font-extrabold text-ink leading-7 tabular-nums">
-                  {toPersianDigits(item.value)}
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        ].map((item) => (
+          <div key={item.label} className="d-stat">
+            <div className="text-caption font-medium text-muted">{item.label}</div>
+            <div className="d-stat-value">{toPersianDigits(item.value)}</div>
+          </div>
+        ))}
       </div>
 
       <div className="d-card p-4 sm:p-5 mb-5">
@@ -187,11 +167,11 @@ export const AppointmentsView: React.FC = () => {
               onChange={(value) => setViewMode(value as ViewMode)}
             />
 
-            <div className="flex items-center gap-1 bg-surface border border-line rounded-[10px] p-1">
+            <div className="flex items-center gap-1 bg-surface border border-line rounded-[3px] p-1">
               <button
                 type="button"
                 onClick={() => setWeekOffset((offset) => offset - 1)}
-                className="w-7 h-7 rounded-[7px] hover:bg-canvas text-muted flex items-center justify-center"
+                className="w-7 h-7 rounded-[3px] hover:bg-canvas text-muted flex items-center justify-center"
                 aria-label="هفته قبل"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -199,14 +179,14 @@ export const AppointmentsView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setWeekOffset(0)}
-                className="h-8 px-2.5 rounded-[7px] hover:bg-canvas text-caption font-semibold text-ink"
+                className="h-8 px-2.5 rounded-[3px] hover:bg-canvas text-caption font-semibold text-ink"
               >
                 امروز
               </button>
               <button
                 type="button"
                 onClick={() => setWeekOffset((offset) => offset + 1)}
-                className="w-7 h-7 rounded-[7px] hover:bg-canvas text-muted flex items-center justify-center"
+                className="w-7 h-7 rounded-[3px] hover:bg-canvas text-muted flex items-center justify-center"
                 aria-label="هفته بعد"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -323,12 +303,12 @@ export const AppointmentsView: React.FC = () => {
                               key={appointment.id}
                               type="button"
                               onClick={() => setSelected(appointment)}
-                              className={`w-full text-right rounded-[8px] border p-2 transition-colors hover:shadow-sm ${
+                              className={`w-full text-right rounded-[3px] border p-2 transition-colors ${
                                 appointment.status === 'cancelled'
                                   ? 'border-danger-line bg-danger-soft opacity-80'
                                   : appointment.status === 'completed'
                                   ? 'border-line bg-surface-muted'
-                                  : 'border-primary-line bg-[#F3FBF9] hover:bg-[#EAF7F4]'
+                                  : 'border-primary-line bg-[#fbf8f2] hover:bg-[#f3ece2]'
                               }`}
                             >
                               <div className="flex items-center justify-between gap-1">

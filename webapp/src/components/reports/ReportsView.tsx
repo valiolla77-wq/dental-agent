@@ -145,9 +145,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNavigate }) => {
   const maxDoctor = Math.max(1, ...doctorMetrics.map((metric) => metric.count));
 
   const statusData = [
-    { label: 'تکمیل‌شده', value: completed.length, color: '#087F83' },
-    { label: 'لغوشده', value: cancelled.length, color: '#B73F52' },
-    { label: 'در انتظار / فعال', value: upcoming.length, color: '#B8DDDC' },
+    { label: 'تکمیل‌شده', value: completed.length, color: '#45674d' },
+    { label: 'لغوشده', value: cancelled.length, color: '#9c3a34' },
+    { label: 'در انتظار / فعال', value: upcoming.length, color: '#9c4a2f' },
   ];
   const statusTotal = statusData.reduce((sum, item) => sum + item.value, 0);
 
@@ -172,7 +172,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNavigate }) => {
       {error && <ErrorBanner message={error} onRetry={load} />}
       {loading && !reports && <LoadingPanel message="در حال دریافت گزارش‌های کلینیک..." />}
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-5">
+      <div className="d-stat-band grid grid-cols-2 xl:grid-cols-4 mb-5">
         <StatCard
           icon={<CalendarDays className="w-[18px] h-[18px]" />}
           label={`نوبت‌های ${toPersianDigits(rangeDays)} روز اخیر`}
@@ -353,7 +353,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNavigate }) => {
       </div>
 
       {/* Deterministic data reading — explicitly not an LLM summary */}
-      <section className="d-ai-card p-5 sm:p-6">
+      <section className="d-card p-5 sm:p-6">
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 text-small font-bold text-ai">
@@ -363,8 +363,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNavigate }) => {
             <p className="text-caption text-muted mt-1">
               این بخش یک محاسبه قطعی روی نوبت‌های ثبت‌شده است؛ خلاصه تولیدشده توسط مدل زبانی نیست.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 mt-4">
-              <div className="bg-surface/75 border border-ai-line rounded-[12px] p-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4 mt-4">
+              <div className="border-t border-line-soft pt-3">
                 <div className="flex items-center gap-1.5 text-caption font-bold text-ink">
                   <TrendingUp className="w-3.5 h-3.5 text-primary" />
                   پرترافیک‌ترین روز
@@ -375,7 +375,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNavigate }) => {
                     : 'در این بازه نوبتی ثبت نشده است.'}
                 </p>
               </div>
-              <div className="bg-surface/75 border border-ai-line rounded-[12px] p-3.5">
+              <div className="border-t border-line-soft pt-3">
                 <div className="flex items-center gap-1.5 text-caption font-bold text-ink">
                   <Stethoscope className="w-3.5 h-3.5 text-primary" />
                   پرتقاضاترین خدمت
@@ -386,7 +386,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNavigate }) => {
                     : 'خدمتی در این بازه ثبت نشده است.'}
                 </p>
               </div>
-              <div className="bg-surface/75 border border-ai-line rounded-[12px] p-3.5">
+              <div className="border-t border-line-soft pt-3">
                 <div className="flex items-center gap-1.5 text-caption font-bold text-ink">
                   <AlertTriangle className="w-3.5 h-3.5 text-warn" />
                   بار کاری پزشکان
@@ -400,11 +400,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNavigate }) => {
             </div>
           </div>
 
-          <div className="shrink-0 w-full lg:w-56 flex flex-col gap-2">
+          <div className="shrink-0 w-full lg:w-60 flex flex-col lg:border-s lg:border-line lg:ps-5">
             <button
               type="button"
               onClick={() => onNavigate('agent')}
-              className="d-link justify-between bg-surface/70 border border-ai-line rounded-[10px] px-3 py-2.5"
+              className="d-link justify-between py-2 border-b border-line-soft"
             >
               درخواست گزارش از دستیار
               <ChevronLeft className="w-3.5 h-3.5" />
@@ -412,7 +412,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNavigate }) => {
             <button
               type="button"
               onClick={() => onNavigate('users')}
-              className="d-link justify-between bg-surface/70 border border-ai-line rounded-[10px] px-3 py-2.5"
+              className="d-link justify-between py-2 border-b border-line-soft"
             >
               مدیریت کاربران
               <ChevronLeft className="w-3.5 h-3.5" />

@@ -54,7 +54,7 @@ export const Modal: React.FC<ModalProps> = ({
     >
       <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
       <div
-        className={`relative z-10 flex min-h-0 w-full flex-col overflow-hidden ${maxWidthClasses[maxWidth]} max-h-[calc(100dvh-1rem)] rounded-[20px] border border-line bg-surface shadow-[0_24px_80px_-24px_rgba(23,43,71,0.35)] sm:max-h-[92vh] sm:rounded-[24px]`}
+        className={`relative z-10 flex min-h-0 w-full flex-col overflow-hidden ${maxWidthClasses[maxWidth]} max-h-[calc(100dvh-1rem)] rounded-[6px] border border-line bg-surface shadow-[0_0_48px_rgba(20,16,12,0.2)] sm:max-h-[92vh] sm:rounded-[6px]`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 px-4 py-4 sm:px-6 sm:py-5 border-b border-line-soft">
@@ -72,7 +72,7 @@ export const Modal: React.FC<ModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="بستن پنجره"
-            className="p-1.5 -mt-1 -ml-1 text-faint hover:text-ink hover:bg-canvas rounded-[10px] transition-colors shrink-0"
+            className="p-1.5 -mt-1 -ml-1 text-faint hover:text-ink hover:bg-canvas rounded-[3px] transition-colors shrink-0"
           >
             <X className="w-4.5 h-4.5" />
           </button>

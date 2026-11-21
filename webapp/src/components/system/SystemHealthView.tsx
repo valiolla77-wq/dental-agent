@@ -5,7 +5,6 @@ import {
   Database,
   MessageSquare,
   RefreshCw,
-  ShieldCheck,
   Server,
 } from 'lucide-react';
 import { apiClient } from '../../api/client';
@@ -46,22 +45,27 @@ interface HealthRowProps {
 }
 
 const TONE_CLASSES: Record<HealthRowProps['tone'], string> = {
-  ok: 'bg-primary-soft text-primary-deep border-primary-line',
-  warn: 'bg-warn-soft text-warn border-warn-line',
-  bad: 'bg-danger-soft text-danger border-danger-line',
+  ok: 'text-success',
+  warn: 'text-warn',
+  bad: 'text-danger',
+};
+
+const TONE_DOTS: Record<HealthRowProps['tone'], string> = {
+  ok: 'bg-success',
+  warn: 'bg-warn',
+  bad: 'bg-danger',
 };
 
 const HealthRow: React.FC<HealthRowProps> = ({ icon, label, value, tone }) => (
-  <div className="rounded-[12px] border border-line p-4 flex items-start gap-3">
-    <span className="d-icon-ring w-9 h-9 shrink-0">{icon}</span>
+  <div className="flex items-start gap-2.5 py-3 min-w-0">
+    <span className="shrink-0 mt-0.5 text-faint" aria-hidden="true">
+      {icon}
+    </span>
     <div className="min-w-0 flex-1">
       <div className="text-caption text-faint">{label}</div>
-      <div className="mt-2">
-        <span
-          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-caption font-bold ${TONE_CLASSES[tone]}`}
-        >
-          {value}
-        </span>
+      <div className={`mt-1 flex items-center gap-1.5 text-small font-bold ${TONE_CLASSES[tone]}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${TONE_DOTS[tone]}`} aria-hidden="true" />
+        <span className="truncate">{value}</span>
       </div>
     </div>
   </div>
@@ -128,55 +132,66 @@ export const SystemHealthView: React.FC = () => {
             }
             action={
               <span
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-caption font-bold ${
-                  data.status === 'ok'
-                    ? 'bg-primary-soft text-primary-deep border-primary-line'
-                    : 'bg-warn-soft text-warn border-warn-line'
+                className={`inline-flex items-center gap-1.5 text-caption font-bold ${
+                  data.status === 'ok' ? 'text-success' : 'text-warn'
                 }`}
               >
-                <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    data.status === 'ok' ? 'bg-success' : 'bg-warn'
+                  }`}
+                  aria-hidden="true"
+                />
                 {data.status === 'ok' ? 'سالم' : 'نیازمند بررسی'}
               </span>
             }
+            noPadding
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <HealthRow
-                icon={<Database className="w-4 h-4" />}
-                label="پایگاه داده"
-                value={data.database === 'ok' ? 'در دسترس' : 'در دسترس نیست'}
-                tone={data.database === 'ok' ? 'ok' : 'bad'}
-              />
-              <HealthRow
-                icon={<MessageSquare className="w-4 h-4" />}
-                label="ارسال پیامک / کد ورود"
-                value={SMS_LABELS[data.sms_provider] || data.sms_provider}
-                tone={data.sms_provider === 'fake' ? 'warn' : 'ok'}
-              />
-              <HealthRow
-                icon={<Bot className="w-4 h-4" />}
-                label="دستیار هوشمند"
-                value={ASSISTANT_LABELS[data.assistant_provider] || data.assistant_provider}
-                tone={data.assistant_configured ? 'ok' : 'warn'}
-              />
-              <HealthRow
-                icon={<Clock className="w-4 h-4" />}
-                label="مدت فعالیت سرویس"
-                value={formatUptime(data.uptime_seconds)}
-                tone="ok"
-              />
+            <div className="divide-y divide-line-soft">
+              <div className="px-5 sm:px-6">
+                <HealthRow
+                  icon={<Database className="w-3.5 h-3.5" />}
+                  label="پایگاه داده"
+                  value={data.database === 'ok' ? 'در دسترس' : 'در دسترس نیست'}
+                  tone={data.database === 'ok' ? 'ok' : 'bad'}
+                />
+              </div>
+              <div className="px-5 sm:px-6">
+                <HealthRow
+                  icon={<MessageSquare className="w-3.5 h-3.5" />}
+                  label="ارسال پیامک / کد ورود"
+                  value={SMS_LABELS[data.sms_provider] || data.sms_provider}
+                  tone={data.sms_provider === 'fake' ? 'warn' : 'ok'}
+                />
+              </div>
+              <div className="px-5 sm:px-6">
+                <HealthRow
+                  icon={<Bot className="w-3.5 h-3.5" />}
+                  label="دستیار هوشمند"
+                  value={ASSISTANT_LABELS[data.assistant_provider] || data.assistant_provider}
+                  tone={data.assistant_configured ? 'ok' : 'warn'}
+                />
+              </div>
+              <div className="px-5 sm:px-6">
+                <HealthRow
+                  icon={<Clock className="w-3.5 h-3.5" />}
+                  label="مدت فعالیت سرویس"
+                  value={formatUptime(data.uptime_seconds)}
+                  tone="ok"
+                />
+              </div>
             </div>
           </SectionCard>
 
           <SectionCard title="نسخهٔ سرویس">
-            <div className="flex flex-wrap items-center gap-3 text-small text-muted">
-              <span className="d-icon-ring w-9 h-9">
-                <Server className="w-4 h-4" />
+            <div className="flex flex-wrap items-center justify-between gap-3 text-small text-muted">
+              <span className="inline-flex items-center gap-2">
+                <Server className="w-3.5 h-3.5 text-faint" aria-hidden="true" />
+                نسخهٔ فعال
               </span>
-              <span>
-                نسخهٔ فعال: <span className="font-bold text-ink">{data.version}</span>
-              </span>
+              <span className="font-bold text-ink tabular-nums">{data.version}</span>
             </div>
-            <div className="d-soft-info px-3 py-2.5 mt-4 text-caption text-info leading-5">
+            <div className="d-note px-3 py-2.5 mt-4 text-caption leading-5">
               این صفحه فقط نام سرویس‌ها و وضعیت آن‌ها را نشان می‌دهد؛ کلیدها، آدرس‌های داخلی و
               اطلاعات بیماران نمایش داده نمی‌شوند.
             </div>

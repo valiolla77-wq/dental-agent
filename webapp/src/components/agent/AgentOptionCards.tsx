@@ -93,7 +93,7 @@ export const AgentOptionCards: React.FC<AgentOptionCardsProps> = ({
               type="button"
               disabled={disabled}
               onClick={() => onSelect(`گزینه ${option.index}`)}
-              className={`group w-full text-right rounded-[10px] border border-primary-line bg-[#F3FBF9] hover:bg-primary-soft hover:border-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between gap-2 ${
+              className={`group w-full text-right rounded-[3px] border border-primary-line bg-[#fbf8f2] hover:bg-primary-soft hover:border-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between gap-2 ${
                 compact ? 'p-2' : 'p-2.5'
               }`}
             >

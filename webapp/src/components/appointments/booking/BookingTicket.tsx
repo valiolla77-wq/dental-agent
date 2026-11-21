@@ -51,16 +51,16 @@ export const BookingTicket: React.FC<BookingTicketProps> = ({
     <div
       role="group"
       aria-label="کارت نوبت"
-      className={`relative overflow-hidden rounded-[20px] bg-ink text-on-accent shadow-[0_18px_40px_-22px_rgba(23,43,71,0.7)] ${
-        confirmed ? 'ring-2 ring-[#8FE0DC]/60' : ''
+      className={`relative overflow-hidden rounded-[4px] bg-ink text-on-accent ${
+        confirmed ? 'ring-2 ring-[#c98a72]/60' : ''
       }`}
     >
       <div className="px-5 pt-4 pb-5">
         <div className="flex items-center justify-between">
           <span className="text-small font-semibold text-on-accent/70">کارت نوبت</span>
           <span
-            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-small font-semibold ${
-              confirmed ? 'bg-[#8FE0DC] text-[#0E3A3C]' : 'bg-surface/10 text-on-accent/70'
+            className={`inline-flex items-center gap-1 rounded-[2px] px-2 py-1 text-small font-semibold ${
+              confirmed ? 'bg-[#f0cbb9] text-[#241f19]' : 'bg-surface/10 text-on-accent/70'
             }`}
           >
             {confirmed && <Check className="w-3 h-3" aria-hidden="true" />}
@@ -85,14 +85,14 @@ export const BookingTicket: React.FC<BookingTicketProps> = ({
               <div
                 key={time || 'no-time'}
                 className={`pb-0.5 text-[30px] leading-none font-extrabold tabular-nums ${
-                  time ? 'text-[#8FE0DC] d-pop' : 'text-on-accent/25'
+                  time ? 'text-[#f0cbb9] d-pop' : 'text-on-accent/25'
                 }`}
               >
                 {time ? formatTimeFa(time) : '--:--'}
               </div>
             </div>
           ) : (
-            <div className="flex h-[88px] items-center justify-center rounded-[12px] border border-dashed border-surface/20 px-4 text-center text-small leading-5 text-on-accent/50">
+            <div className="flex h-[88px] items-center justify-center rounded-[4px] border border-dashed border-surface/20 px-4 text-center text-small leading-5 text-on-accent/50">
               روز و ساعت هنوز انتخاب نشده است
             </div>
           )}

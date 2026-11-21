@@ -9,17 +9,10 @@ interface BadgeProps {
   dot?: boolean;
 }
 
-const DOT_COLORS: Record<string, string> = {
-  default: '#98A4B4',
-  neutral: '#98A4B4',
-  success: '#087F83',
-  teal: '#087F83',
-  warning: '#946318',
-  danger: '#B73F52',
-  info: '#2F5D8A',
-  ai: '#6260B6',
-};
-
+/**
+ * Paper badges are not pills: they are coloured text with a dot. In a dense
+ * table a row of pills reads as noise; a dot and a word read as a fact.
+ */
 export const Badge: React.FC<BadgeProps> = ({
   children,
   variant = 'default',
@@ -28,31 +21,26 @@ export const Badge: React.FC<BadgeProps> = ({
   dot = false,
 }) => {
   const variantStyles = {
-    default: 'bg-canvas text-muted border-line',
-    neutral: 'bg-canvas text-muted border-line',
-    success: 'bg-primary-soft text-primary-deep border-primary-line',
-    warning: 'bg-warn-soft text-warn border-warn-line',
-    danger: 'bg-danger-soft text-danger border-danger-line',
-    info: 'bg-info-soft text-info border-info-line',
-    teal: 'bg-primary-soft text-primary border-primary-line',
-    ai: 'bg-ai-soft text-ai border-ai-line',
+    default: 'text-muted',
+    neutral: 'text-muted',
+    success: 'text-success',
+    warning: 'text-warn',
+    danger: 'text-danger',
+    info: 'text-info',
+    teal: 'text-primary',
+    ai: 'text-ai',
   };
 
   const sizeStyles = {
-    sm: 'text-caption px-2.5 h-[22px]',
-    md: 'text-small px-3 h-[26px]',
+    sm: 'text-caption h-[20px]',
+    md: 'text-small h-[24px]',
   };
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 font-semibold rounded-full border leading-none ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
+      className={`inline-flex items-center gap-1.5 font-semibold leading-none ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
     >
-      {dot && (
-        <span
-          className="w-1.5 h-1.5 rounded-full shrink-0"
-          style={{ background: DOT_COLORS[variant] }}
-        />
-      )}
+      {dot && <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-current" aria-hidden="true" />}
       {children}
     </span>
   );

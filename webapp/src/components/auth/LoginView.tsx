@@ -162,7 +162,7 @@ export const LoginView: React.FC = () => {
 
         <div className="relative">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-[14px] bg-surface/12 border border-surface/25 flex items-center justify-center">
+            <div className="w-11 h-11 rounded-[4px] bg-surface/12 border border-surface/25 flex items-center justify-center">
               <Building2 className="w-5 h-5 text-on-accent" />
             </div>
             <div>
@@ -233,7 +233,7 @@ export const LoginView: React.FC = () => {
               return (
                 <div
                   key={item.title}
-                  className="flex items-start gap-3 bg-surface/8 border border-surface/12 rounded-[12px] px-3.5 py-3"
+                  className="flex items-start gap-3 bg-surface/8 border border-surface/12 rounded-[4px] px-3.5 py-3"
                 >
                   <span className="w-8 h-8 rounded-full bg-surface/12 border border-surface/20 flex items-center justify-center shrink-0">
                     <Icon className="w-3.5 h-3.5 text-primary-line" />
@@ -260,7 +260,7 @@ export const LoginView: React.FC = () => {
       <main className="flex-1 flex flex-col justify-center items-center px-4 sm:px-8 py-10">
         <div className="w-full max-w-[420px] d-fade">
           <div className="lg:hidden flex items-center gap-2.5 mb-7">
-            <div className="w-10 h-10 rounded-[12px] bg-primary-soft border border-primary-line text-primary flex items-center justify-center">
+            <div className="w-10 h-10 rounded-[4px] bg-primary-soft border border-primary-line text-primary flex items-center justify-center">
               <Building2 className="w-5 h-5" />
             </div>
             <div>

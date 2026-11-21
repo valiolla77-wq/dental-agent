@@ -27,15 +27,15 @@ const KIND_META: Record<
   },
   appointment_rescheduled: {
     icon: CalendarDays,
-    ring: 'bg-[#EEF4FB] text-info border-[#D7E4F4]',
+    ring: 'bg-info-soft text-info border-info-line',
   },
   reminder: {
     icon: AlarmClock,
-    ring: 'bg-[#FFF7E6] text-[#9A6700] border-[#F0D48A]',
+    ring: 'bg-warn-soft text-warn border-warn-line',
   },
   clinical_entry: {
     icon: ClipboardPlus,
-    ring: 'bg-[#F3F0FF] text-ai border-ai-line',
+    ring: 'bg-ai-soft text-ai border-ai-line',
   },
   system: {
     icon: Megaphone,
@@ -138,21 +138,21 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       <button
         type="button"
         onClick={() => void toggleOpen()}
-        className="relative w-8 h-8 rounded-[9px] bg-surface border border-line text-muted hover:text-primary hover:border-primary-line flex items-center justify-center transition-colors"
+        className="d-util-btn"
         aria-label="اعلان‌ها"
         title="اعلان‌ها"
       >
         <Bell className="w-4 h-4" />
         {unread > 0 && (
-          <span className="absolute -top-1.5 -left-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-on-accent text-caption font-extrabold flex items-center justify-center tabular-nums leading-none">
+          <span className="absolute -top-1.5 -left-1.5 min-w-[17px] h-[17px] px-1 rounded-full bg-primary text-on-accent text-caption font-extrabold flex items-center justify-center tabular-nums leading-none">
             {unread > 9 ? '۹+' : new Intl.NumberFormat('fa-IR').format(unread)}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute left-0 mt-2 w-[320px] sm:w-[360px] max-w-[calc(100vw-1.5rem)] rounded-[16px] border border-line bg-surface shadow-[0_24px_80px_-24px_rgba(23,43,71,0.35)] z-50 overflow-hidden d-fade">
-          <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-line-soft">
+        <div className="absolute left-0 mt-2 w-[320px] sm:w-[360px] max-w-[calc(100vw-1.5rem)] rounded-[4px] border border-line bg-surface shadow-[0_18px_48px_-16px_rgba(36,31,25,0.28)] z-50 overflow-hidden d-fade">
+          <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-line">
             <div className="text-small font-bold text-ink">اعلان‌ها</div>
             {unread > 0 && (
               <button
@@ -189,12 +189,12 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                       <button
                         type="button"
                         onClick={() => void openItem(item)}
-                        className={`w-full text-right px-4 py-3 flex items-start gap-2.5 hover:bg-[#FBFDFD] transition-colors ${
-                          item.is_read ? '' : 'bg-[#F7FBFA]'
+                        className={`w-full text-right px-4 py-3 flex items-start gap-2.5 hover:bg-surface-muted transition-colors ${
+                          item.is_read ? '' : 'bg-primary-soft/45'
                         }`}
                       >
                         <span
-                          className={`w-8 h-8 rounded-[10px] border flex items-center justify-center shrink-0 ${meta.ring}`}
+                          className={`w-8 h-8 rounded-[3px] border flex items-center justify-center shrink-0 ${meta.ring}`}
                         >
                           <Icon className="w-4 h-4" />
                         </span>

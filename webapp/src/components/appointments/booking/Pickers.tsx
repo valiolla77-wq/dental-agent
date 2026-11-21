@@ -13,7 +13,7 @@ import { formatTimeFa, toPersianDigits } from '../../../utils/persianDate';
 import { FOCUS_RING } from './FlowSection';
 
 const tileClass = (selected: boolean) =>
-  `relative w-full rounded-[14px] border p-3.5 text-start transition-colors ${FOCUS_RING} ${
+  `relative w-full rounded-[4px] border p-3.5 text-start transition-colors ${FOCUS_RING} ${
     selected
       ? 'border-primary bg-primary-soft'
       : 'border-line bg-surface hover:border-primary-line'
@@ -259,12 +259,12 @@ export const WhenPicker: React.FC<{
   return (
     <div className="space-y-4">
       {/* Shortcut: one tap sets both the day and the time. */}
-      {earliest === 'pending' && <div className="d-skeleton h-[52px] rounded-[14px]" />}
+      {earliest === 'pending' && <div className="d-skeleton h-[52px] rounded-[4px]" />}
       {earliest && earliest !== 'pending' && earliestDay && (
         <button
           type="button"
           onClick={() => onPickEarliest(earliest)}
-          className={`flex w-full items-center gap-3 rounded-[14px] border border-primary-line bg-primary-soft px-3.5 py-3 text-start transition-colors hover:bg-primary-hover ${FOCUS_RING}`}
+          className={`flex w-full items-center gap-3 rounded-[4px] border border-primary-line bg-primary-soft px-3.5 py-3 text-start transition-colors hover:bg-primary-hover ${FOCUS_RING}`}
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface text-primary">
             {earliestChosen ? (
@@ -308,7 +308,7 @@ export const WhenPicker: React.FC<{
               aria-pressed={active}
               disabled={full}
               onClick={() => onPickDay(day)}
-              className={`w-[68px] shrink-0 rounded-[14px] border px-1 py-2.5 text-center transition-colors disabled:cursor-not-allowed ${FOCUS_RING} ${
+              className={`w-[68px] shrink-0 rounded-[4px] border px-1 py-2.5 text-center transition-colors disabled:cursor-not-allowed ${FOCUS_RING} ${
                 active
                   ? 'border-primary bg-primary text-on-accent'
                   : full
@@ -357,7 +357,7 @@ export const WhenPicker: React.FC<{
               type="button"
               onClick={() => onRefresh(selectedDay)}
               disabled={selectedAvailability?.status === 'loading'}
-              className={`inline-flex items-center gap-1 rounded-[8px] px-1.5 py-1 text-small text-primary hover:text-primary-deep disabled:opacity-50 ${FOCUS_RING}`}
+              className={`inline-flex items-center gap-1 rounded-[3px] px-1.5 py-1 text-small text-primary hover:text-primary-deep disabled:opacity-50 ${FOCUS_RING}`}
             >
               <RefreshCw
                 aria-hidden="true"
@@ -370,7 +370,7 @@ export const WhenPicker: React.FC<{
           {!selectedAvailability || selectedAvailability.status === 'loading' ? (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
               {[0, 1, 2, 3, 4].map((item) => (
-                <div key={item} className="d-skeleton h-10 rounded-[10px]" />
+                <div key={item} className="d-skeleton h-10 rounded-[3px]" />
               ))}
             </div>
           ) : selectedAvailability.status === 'error' ? (
@@ -393,7 +393,7 @@ export const WhenPicker: React.FC<{
                         type="button"
                         aria-pressed={startTime === slot}
                         onClick={() => onPickTime(slot)}
-                        className={`h-10 rounded-[10px] border text-body font-semibold tabular-nums transition-colors ${FOCUS_RING} ${
+                        className={`h-10 rounded-[3px] border text-body font-semibold tabular-nums transition-colors ${FOCUS_RING} ${
                           startTime === slot
                             ? 'border-primary bg-primary text-on-accent'
                             : 'border-line bg-surface text-ink hover:border-primary-line'

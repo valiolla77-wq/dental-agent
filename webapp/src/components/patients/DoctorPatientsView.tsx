@@ -140,7 +140,7 @@ export const DoctorPatientsView: React.FC = () => {
         subtitle="مراجعانی که برای شما نوبت ثبت شده دارند؛ فهرست از نوبت‌های واقعی سرور ساخته می‌شود."
       />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-5">
+      <div className="d-stat-band grid grid-cols-2 xl:grid-cols-4 mb-5">
         <StatCard
           icon={<Users className="w-[18px] h-[18px]" />}
           label="بیماران مجاز"
@@ -217,7 +217,7 @@ export const DoctorPatientsView: React.FC = () => {
                   <tr key={patient.key}>
                     <td>
                       <div className="flex items-center gap-2.5">
-                        <span className="w-8 h-8 rounded-full bg-primary-soft border border-primary-line text-primary-deep text-small font-bold flex items-center justify-center shrink-0">
+                        <span className="w-8 h-8 rounded-[3px] bg-surface-muted border border-line text-ink-soft text-small font-bold flex items-center justify-center shrink-0">
                           {patient.name.charAt(0)}
                         </span>
                         <div>
@@ -309,7 +309,7 @@ export const DoctorPatientsView: React.FC = () => {
             {selectedRows.map((appointment) => (
               <div
                 key={appointment.id}
-                className="rounded-[12px] border border-line p-3.5 flex items-start justify-between gap-3"
+                className="rounded-[4px] border border-line p-3.5 flex items-start justify-between gap-3"
               >
                 <div className="min-w-0">
                   <div className="text-small font-bold text-ink">

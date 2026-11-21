@@ -47,7 +47,7 @@ export const FlowSection: React.FC<FlowSectionProps> = ({
         aria-controls={`${id}-panel`}
         disabled={disabled}
         onClick={onToggle}
-        className={`flex w-full items-center gap-3 rounded-[10px] py-2.5 text-start disabled:cursor-not-allowed ${FOCUS_RING}`}
+        className={`flex w-full items-center gap-3 rounded-[3px] py-2.5 text-start disabled:cursor-not-allowed ${FOCUS_RING}`}
       >
         <span
           className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${

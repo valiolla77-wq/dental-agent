@@ -33,7 +33,6 @@ import {
   UserCog,
   Users,
   AlertTriangle,
-  TrendingUp,
 } from 'lucide-react';
 
 interface AdminDashboardPanelProps {
@@ -122,9 +121,9 @@ export const AdminDashboardPanel: React.FC<AdminDashboardPanelProps> = ({
     ...topServices.map((item, index) => ({
       label: item.name,
       value: item.total,
-      color: ['#087F83', '#6260B6', '#B8DDDC'][index] || '#E3E9F0',
+      color: ['#9C4A2F', '#5A4D7A', '#C9A892'][index] || '#DDD4C3',
     })),
-    ...(otherCount > 0 ? [{ label: 'سایر خدمات', value: otherCount, color: '#E3E9F0' }] : []),
+    ...(otherCount > 0 ? [{ label: 'سایر خدمات', value: otherCount, color: '#DDD4C3' }] : []),
   ];
   const serviceTotal = serviceBreakdown.reduce((total, item) => total + item.total, 0);
 
@@ -136,10 +135,10 @@ export const AdminDashboardPanel: React.FC<AdminDashboardPanelProps> = ({
   if (loadingReports && !reports) {
     return (
       <div className="space-y-5">
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="d-stat-band grid grid-cols-2 xl:grid-cols-4">
           {[0, 1, 2, 3].map((item) => (
             <div key={item} className="d-stat">
-              <div className="d-skeleton h-10 w-10 rounded-full" />
+              <div className="d-skeleton h-3 w-24" />
               <div className="d-skeleton h-7 w-20" />
             </div>
           ))}
@@ -157,7 +156,7 @@ export const AdminDashboardPanel: React.FC<AdminDashboardPanelProps> = ({
       {error && <ErrorBanner message={error} onRetry={loadReports} />}
 
       {/* KPI row — /reports/dashboard overview */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="d-stat-band grid grid-cols-2 xl:grid-cols-4">
         <StatCard
           icon={<CalendarDays className="w-[18px] h-[18px]" />}
           label="نوبت‌های امروز"
@@ -225,19 +224,19 @@ export const AdminDashboardPanel: React.FC<AdminDashboardPanelProps> = ({
               </Button>
             </div>
           ) : (
-            <div className="space-y-2.5">
+            <div className="divide-y divide-line-soft">
               {todayAppointments.map((appointment) => (
                 <button
                   key={appointment.id}
                   type="button"
                   onClick={() => setSelected(appointment)}
-                  className="w-full text-right flex items-center gap-3 p-3 rounded-[12px] border border-line-soft hover:border-primary-line hover:bg-[#FBFDFD] transition-colors"
+                  className="w-full text-right flex items-center gap-4 py-3 px-1 hover:bg-[#fbf8f2] transition-colors"
                 >
-                  <div className="w-[62px] shrink-0 rounded-[10px] bg-primary-soft border border-primary-line text-primary-deep py-2 text-center">
-                    <div className="text-small font-extrabold tabular-nums">
+                  <div className="w-[56px] shrink-0">
+                    <div className="text-small font-bold text-ink tabular-nums">
                       {formatTimeFa(appointment.appointment_time)}
                     </div>
-                    <div className="text-caption opacity-70 mt-0.5">ساعت</div>
+                    <div className="text-caption text-faint mt-0.5">ساعت</div>
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-small font-bold text-ink truncate">
@@ -257,22 +256,17 @@ export const AdminDashboardPanel: React.FC<AdminDashboardPanelProps> = ({
         </SectionCard>
 
         {/* Deterministic daily analysis (not an AI-generated summary) */}
-        <section className="d-ai-card p-5 sm:p-6 flex flex-col">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <div className="flex items-center gap-1.5 text-small font-bold text-ai">
-                <Sparkles className="w-3.5 h-3.5" />
-                تحلیل امروز
-              </div>
-              <p className="text-caption text-muted mt-1">محاسبه‌شده از داده‌های ثبت‌شده — بدون تولید متن حدسی</p>
+        <section className="d-card p-5 sm:p-6 flex flex-col">
+          <div className="flex items-baseline justify-between gap-2 pb-3 mb-1 border-b border-line">
+            <div className="flex items-center gap-1.5 text-small font-bold text-ai">
+              <Sparkles className="w-3.5 h-3.5" />
+              تحلیل امروز
             </div>
-            <span className="w-7 h-7 rounded-full bg-surface/70 border border-ai-line text-ai flex items-center justify-center">
-              <TrendingUp className="w-3.5 h-3.5" />
-            </span>
+            <span className="text-caption text-faint">محاسبه‌شده از داده‌ها</span>
           </div>
 
-          <div className="mt-4 space-y-2.5 flex-1">
-            <div className="bg-surface/75 border border-ai-line rounded-[12px] p-3">
+          <div className="flex-1 divide-y divide-line-soft">
+            <div className="py-3">
               <div className="text-small font-bold text-ink">
                 {toPersianDigits(todayAppointments.length)} نوبت برای امروز
               </div>
@@ -283,7 +277,7 @@ export const AdminDashboardPanel: React.FC<AdminDashboardPanelProps> = ({
               </p>
             </div>
 
-            <div className="bg-surface/75 border border-ai-line rounded-[12px] p-3">
+            <div className="py-3">
               <div className="text-small font-bold text-ink flex items-center gap-1.5">
                 {incomplete > 0 && <AlertTriangle className="w-3.5 h-3.5 text-warn" />}
                 {incomplete > 0
@@ -307,7 +301,7 @@ export const AdminDashboardPanel: React.FC<AdminDashboardPanelProps> = ({
               )}
             </div>
 
-            <div className="bg-surface/75 border border-ai-line rounded-[12px] p-3">
+            <div className="py-3">
               <div className="text-small font-bold text-ink">
                 {busiestDoctor
                   ? `بیشترین بار کاری: ${busiestDoctor.doctor_name}`
@@ -321,9 +315,10 @@ export const AdminDashboardPanel: React.FC<AdminDashboardPanelProps> = ({
                   : 'برای این بازه نوبتی به پزشکان اختصاص داده نشده است.'}
               </p>
             </div>
-            <div className="bg-surface/75 border border-ai-line rounded-[12px] p-3">
+
+            <div className="py-3">
               <div className="text-small font-bold text-ink flex items-center gap-1.5">
-                <Star className="w-3.5 h-3.5 text-[#F0B429]" />
+                <Star className="w-3.5 h-3.5 text-warn" />
                 {ratings && ratings.count > 0
                   ? `رضایت بیماران: ${toPersianDigits(ratings.average.toFixed(1))} از ۵`
                   : 'رضایت بیماران هنوز ثبت نشده'}
@@ -337,9 +332,9 @@ export const AdminDashboardPanel: React.FC<AdminDashboardPanelProps> = ({
           </div>
 
           <Button
-            variant="ai"
+            variant="outline"
             size="sm"
-            className="w-full mt-4"
+            className="w-full mt-4 text-ai border-ai-line hover:bg-ai-soft"
             onClick={onOpenAgent}
             icon={<Sparkles className="w-3.5 h-3.5" />}
           >
@@ -464,7 +459,7 @@ export const AdminDashboardPanel: React.FC<AdminDashboardPanelProps> = ({
               key={item.title}
               type="button"
               onClick={item.onClick}
-              className="d-card p-4 text-right hover:border-primary-line hover:bg-[#FBFDFD] transition-colors flex items-start gap-3"
+              className="d-card p-4 text-right hover:border-line-strong hover:bg-[#fbf8f2] transition-colors flex items-start gap-3"
             >
               <span className="d-icon-ring">
                 <Icon className="w-4 h-4" />

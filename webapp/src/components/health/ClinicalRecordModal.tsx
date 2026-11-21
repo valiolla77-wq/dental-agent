@@ -182,7 +182,7 @@ export const ClinicalRecordModal: React.FC<ClinicalRecordModalProps> = ({
           {/* Allergy banner */}
           {(record?.entries ?? []).filter((e) => e.kind === 'allergy').length >
             0 && (
-            <div className="rounded-[12px] border border-danger-line bg-danger-soft p-3.5">
+            <div className="rounded-[4px] border border-danger-line bg-danger-soft p-3.5">
               <div className="flex items-center gap-2 text-small font-bold text-danger">
                 <AlertTriangle className="w-4 h-4" />
                 هشدار حساسیت
@@ -230,7 +230,7 @@ export const ClinicalRecordModal: React.FC<ClinicalRecordModalProps> = ({
 
           {/* Selected tooth panel */}
           {selectedTooth && (
-            <div className="rounded-[12px] border border-line bg-surface-muted p-4">
+            <div className="rounded-[4px] border border-line bg-surface-muted p-4">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="text-small font-bold text-ink">
                   دندان {toPersianDigits(selectedTooth)}
@@ -249,7 +249,7 @@ export const ClinicalRecordModal: React.FC<ClinicalRecordModalProps> = ({
                     onChange={(event) =>
                       setToothStatus(event.target.value as ToothCondition)
                     }
-                    className="h-9 rounded-[9px] border border-line bg-surface px-2.5 text-small text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="h-9 rounded-[3px] border border-line bg-surface px-2.5 text-small text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
                     aria-label="وضعیت دندان"
                   >
                     {STATUS_OPTIONS.map((option) => (
@@ -264,7 +264,7 @@ export const ClinicalRecordModal: React.FC<ClinicalRecordModalProps> = ({
                     onChange={(event) => setToothNote(event.target.value)}
                     placeholder="توضیح کوتاه (اختیاری)"
                     maxLength={300}
-                    className="flex-1 h-9 rounded-[9px] border border-line bg-surface px-3 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="flex-1 h-9 rounded-[3px] border border-line bg-surface px-3 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                   <Button
                     size="sm"
@@ -306,14 +306,14 @@ export const ClinicalRecordModal: React.FC<ClinicalRecordModalProps> = ({
             </div>
 
             {canWrite && formOpen && (
-              <div className="rounded-[12px] border border-primary-line bg-[#FBFDFD] p-4 space-y-3 mb-4">
+              <div className="rounded-[4px] border border-primary-line bg-[#fbf8f2] p-4 space-y-3 mb-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <select
                     value={kind}
                     onChange={(event) =>
                       setKind(event.target.value as ClinicalEntry['kind'])
                     }
-                    className="h-9 rounded-[9px] border border-line bg-surface px-2.5 text-small text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="h-9 rounded-[3px] border border-line bg-surface px-2.5 text-small text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
                     aria-label="نوع یادداشت"
                   >
                     {KIND_OPTIONS.map((option) => (
@@ -325,7 +325,7 @@ export const ClinicalRecordModal: React.FC<ClinicalRecordModalProps> = ({
                   <select
                     value={entryTooth}
                     onChange={(event) => setEntryTooth(event.target.value)}
-                    className="h-9 rounded-[9px] border border-line bg-surface px-2.5 text-small text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="h-9 rounded-[3px] border border-line bg-surface px-2.5 text-small text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
                     aria-label="دندان مرتبط"
                   >
                     <option value="">بدون دندان مشخص</option>
@@ -346,7 +346,7 @@ export const ClinicalRecordModal: React.FC<ClinicalRecordModalProps> = ({
                     onChange={(event) => setTitle(event.target.value)}
                     placeholder="عنوان (الزامی)"
                     maxLength={200}
-                    className="h-9 rounded-[9px] border border-line bg-surface px-3 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="h-9 rounded-[3px] border border-line bg-surface px-3 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
                 <textarea
@@ -355,7 +355,7 @@ export const ClinicalRecordModal: React.FC<ClinicalRecordModalProps> = ({
                   placeholder="شرح یادداشت (اختیاری)"
                   rows={3}
                   maxLength={4000}
-                  className="w-full rounded-[9px] border border-line bg-surface px-3 py-2 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full rounded-[3px] border border-line bg-surface px-3 py-2 text-small text-ink placeholder:text-line-strong focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
                 <div className="flex items-center gap-2">
                   <Button
@@ -384,7 +384,7 @@ export const ClinicalRecordModal: React.FC<ClinicalRecordModalProps> = ({
             )}
 
             {!record || record.entries.length === 0 ? (
-              <div className="rounded-[12px] border border-dashed border-line p-5 text-center">
+              <div className="rounded-[4px] border border-dashed border-line p-5 text-center">
                 <Info className="w-5 h-5 text-faint mx-auto mb-2" />
                 <p className="text-caption text-muted">
                   هنوز یادداشتی در این پرونده ثبت نشده است.
@@ -395,7 +395,7 @@ export const ClinicalRecordModal: React.FC<ClinicalRecordModalProps> = ({
                 {record.entries.map((entry) => (
                   <div
                     key={entry.id}
-                    className="rounded-[12px] border border-line-soft bg-surface p-3.5"
+                    className="rounded-[4px] border border-line-soft bg-surface p-3.5"
                   >
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0">
@@ -421,7 +421,7 @@ export const ClinicalRecordModal: React.FC<ClinicalRecordModalProps> = ({
                             ? 'bg-danger-soft text-danger border-danger-line'
                             : entry.kind === 'treatment'
                               ? 'bg-primary-soft text-primary-deep border-primary-line'
-                              : 'bg-[#EEF4FB] text-info border-[#D7E4F4]'
+                              : 'bg-info-soft text-info border-info-line'
                         }`}
                       >
                         {

@@ -84,7 +84,7 @@ export const AgentMessageActions: React.FC<{
               setSuccess(null);
               setError(null);
             }}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-caption text-faint hover:text-danger hover:bg-danger-soft transition"
+            className="inline-flex items-center gap-1 rounded-[3px] px-1.5 py-0.5 text-caption text-faint hover:text-danger hover:bg-danger-soft transition"
             title="ارسال این پیام همراه با لاگ‌های اخیر سرور"
           >
             <Flag className="w-3 h-3" />
@@ -97,7 +97,7 @@ export const AgentMessageActions: React.FC<{
               setSuccess(null);
               setError(null);
             }}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-caption text-faint hover:text-primary hover:bg-primary-soft transition"
+            className="inline-flex items-center gap-1 rounded-[3px] px-1.5 py-0.5 text-caption text-faint hover:text-primary hover:bg-primary-soft transition"
           >
             <Lightbulb className="w-3 h-3" />
             پیشنهاد
@@ -106,7 +106,7 @@ export const AgentMessageActions: React.FC<{
       ) : (
         <form
           onSubmit={submit}
-          className="rounded-lg border border-line bg-surface-muted p-2 space-y-1.5"
+          className="rounded-[3px] border border-line bg-surface-muted p-2 space-y-1.5"
         >
           <div className="flex items-center justify-between gap-2">
             <span className="text-caption font-bold text-ink">
@@ -143,7 +143,7 @@ export const AgentMessageActions: React.FC<{
             <button
               type="submit"
               disabled={busy}
-              className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-caption font-bold text-on-accent disabled:opacity-60"
+              className="inline-flex items-center gap-1 rounded-[3px] bg-primary px-2 py-1 text-caption font-bold text-on-accent disabled:opacity-60"
             >
               <Send className="w-3 h-3" />
               {busy ? 'در حال ارسال…' : 'ارسال'}

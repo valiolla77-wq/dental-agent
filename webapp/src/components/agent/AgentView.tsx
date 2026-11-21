@@ -150,7 +150,7 @@ export const AgentView: React.FC = () => {
               type="button"
               title="گفتگوی جدید"
               onClick={() => clearAgentChat()}
-              className="p-1.5 rounded-[8px] bg-primary-soft text-primary border border-primary-line hover:bg-primary-hover transition-colors"
+              className="p-1.5 rounded-[3px] bg-primary-soft text-primary border border-primary-line hover:bg-primary-hover transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
             </button>
@@ -169,7 +169,7 @@ export const AgentView: React.FC = () => {
                 return (
                   <div
                     key={conversation.session_id}
-                    className={`group rounded-[10px] border transition-colors ${
+                    className={`group rounded-[3px] border transition-colors ${
                       isActive
                         ? 'border-primary-line bg-primary-soft'
                         : 'border-transparent hover:bg-surface-muted'
@@ -301,7 +301,7 @@ export const AgentView: React.FC = () => {
                     }`}
                   >
                     {message.error && (
-                      <div className="mb-2 px-2.5 py-2 rounded-[8px] bg-danger-soft border border-danger-line text-caption text-danger flex items-start gap-1.5">
+                      <div className="mb-2 px-2.5 py-2 rounded-[3px] bg-danger-soft border border-danger-line text-caption text-danger flex items-start gap-1.5">
                         <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                         <div className="min-w-0">
                           <span>{message.error}</span>
@@ -310,7 +310,7 @@ export const AgentView: React.FC = () => {
                               type="button"
                               onClick={() => retryLastAgentMessage()}
                               disabled={isAgentTyping}
-                              className="mt-1.5 inline-flex items-center gap-1 rounded-[6px] border border-danger-line bg-surface px-2 py-1 text-caption font-semibold text-danger-deep hover:bg-danger-soft disabled:opacity-50"
+                              className="mt-1.5 inline-flex items-center gap-1 rounded-[3px] border border-danger-line bg-surface px-2 py-1 text-caption font-semibold text-danger-deep hover:bg-danger-soft disabled:opacity-50"
                             >
                               <RotateCcw className="w-2.5 h-2.5" />
                               تلاش دوباره
@@ -429,7 +429,7 @@ export const AgentView: React.FC = () => {
                 onSubmit={handleSubmit}
                 className="p-3 bg-surface border-t border-line-soft flex items-end gap-2"
               >
-                <div className="flex-1 d-textarea !p-0 border border-line rounded-[12px] focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/10 bg-surface-muted">
+                <div className="flex-1 d-textarea !p-0 border border-line rounded-[4px] focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/10 bg-surface-muted">
                   <textarea
                     value={input}
                     onChange={(event) => setInput(event.target.value)}
@@ -462,34 +462,28 @@ export const AgentView: React.FC = () => {
 
         {/* Context rail */}
         <aside className="hidden xl:flex w-[240px] shrink-0 flex-col gap-3">
-          <section className="d-ai-card p-4">
+          <section className="d-card p-4">
             <div className="flex items-center gap-1.5 text-caption font-bold text-ai">
               <Sparkles className="w-3.5 h-3.5" />
               دستیار چگونه کار می‌کند؟
             </div>
-            <ul className="mt-3 space-y-2 text-caption text-muted leading-5">
-              <li className="bg-surface/70 border border-ai-line rounded-[9px] px-2.5 py-2">
-                داده‌ها را از همان API واقعی کلینیک می‌خواند.
-              </li>
-              <li className="bg-surface/70 border border-ai-line rounded-[9px] px-2.5 py-2">
-                پیش از هر تغییر، کارت تأیید نمایش می‌دهد.
-              </li>
-              <li className="bg-surface/70 border border-ai-line rounded-[9px] px-2.5 py-2">
-                نتیجه اجرا دوباره از سرور خوانده می‌شود.
-              </li>
+            <ul className="mt-2 divide-y divide-line-soft text-caption text-muted leading-5">
+              <li className="py-2">داده‌ها را از همان API واقعی کلینیک می‌خواند.</li>
+              <li className="py-2">پیش از هر تغییر، کارت تأیید نمایش می‌دهد.</li>
+              <li className="py-2 pb-0">نتیجه اجرا دوباره از سرور خوانده می‌شود.</li>
             </ul>
           </section>
 
           <section className="d-card p-4">
             <div className="text-caption font-bold text-ink">پیشنهادها</div>
-            <div className="mt-2.5 space-y-2">
+            <div className="mt-1 divide-y divide-line-soft">
               {currentSuggestions.slice(0, 3).map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
                   onClick={() => sendAgentMessage(suggestion)}
                   disabled={isAgentTyping || chatBlocked}
-                  className="w-full text-right text-caption text-muted leading-5 rounded-[9px] border border-line px-2.5 py-2 hover:border-primary-line hover:bg-surface-muted transition-colors disabled:opacity-50"
+                  className="w-full text-right text-caption text-muted leading-5 py-2 hover:text-ink transition-colors disabled:opacity-50"
                 >
                   {suggestion}
                 </button>

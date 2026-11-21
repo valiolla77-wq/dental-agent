@@ -46,7 +46,7 @@ export const ConnectionBanner: React.FC = () => {
 
   return (
     <div className="border-b border-danger-line bg-danger-soft" role="status">
-      <div className="px-4 sm:px-6 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 text-small text-[#8E2F3E]">
+      <div className="px-4 sm:px-6 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 text-small text-danger">
         <WifiOff className="w-4 h-4 shrink-0" aria-hidden="true" />
         <span className="font-semibold">ارتباط با سامانه برقرار نیست.</span>
         <span className="text-caption text-danger">
@@ -65,7 +65,7 @@ export const ConnectionBanner: React.FC = () => {
           <button
             type="button"
             onClick={() => setDismissed(true)}
-            className="p-1.5 rounded-[8px] text-danger hover:bg-[#FFE2E6]"
+            className="p-1.5 rounded-[3px] text-danger hover:bg-danger-soft"
             aria-label="بستن پیام قطعی ارتباط"
           >
             <X className="w-3.5 h-3.5" aria-hidden="true" />

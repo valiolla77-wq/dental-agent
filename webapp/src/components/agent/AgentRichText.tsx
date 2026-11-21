@@ -266,7 +266,7 @@ export const AgentRichText: React.FC<{ content: string; className?: string }> = 
         <pre
           key={`code-${index}`}
           dir="ltr"
-          className="overflow-x-auto rounded-lg bg-code-bg px-3 py-2 text-left font-mono text-[0.82em] leading-6 text-code-text"
+          className="overflow-x-auto rounded-[3px] bg-code-bg px-3 py-2 text-left font-mono text-[0.82em] leading-6 text-code-text"
         >
           <code>{code.replace(/\n$/, '')}</code>
           {language ? <span className="sr-only">{language}</span> : null}

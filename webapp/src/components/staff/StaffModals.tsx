@@ -126,7 +126,7 @@ export const CreateStaffModal: React.FC<BaseProps> = ({ onClose, onDone }) => {
             {STAFF_ROLE_ORDER.map((option) => (
               <label
                 key={option}
-                className={`flex items-start gap-2.5 p-3 rounded-[10px] border cursor-pointer transition-colors ${
+                className={`flex items-start gap-2.5 p-3 rounded-[3px] border cursor-pointer transition-colors ${
                   role === option
                     ? 'border-primary bg-primary-soft/60'
                     : 'border-line hover:border-primary-line'
@@ -211,7 +211,7 @@ export const PromoteStaffModal: React.FC<PromoteProps> = ({ staff, onClose, onDo
           {STAFF_ROLE_ORDER.map((option) => (
             <label
               key={option}
-              className={`flex items-start gap-2.5 p-3 rounded-[10px] border cursor-pointer transition-colors ${
+              className={`flex items-start gap-2.5 p-3 rounded-[3px] border cursor-pointer transition-colors ${
                 role === option
                   ? 'border-primary bg-primary-soft/60'
                   : 'border-line hover:border-primary-line'

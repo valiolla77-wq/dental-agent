@@ -134,7 +134,7 @@ export const DoctorDashboardPanel: React.FC<DoctorDashboardPanelProps> = ({ onNa
     <div className="space-y-5">
       {error && <ErrorBanner message={error} onRetry={load} />}
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="d-stat-band grid grid-cols-2 xl:grid-cols-4">
         <StatCard
           icon={<CalendarDays className="w-[18px] h-[18px]" />}
           label="نوبت‌های امروز"
@@ -173,7 +173,7 @@ export const DoctorDashboardPanel: React.FC<DoctorDashboardPanelProps> = ({ onNa
               type="button"
               onClick={load}
               disabled={loading}
-              className="p-1.5 rounded-[8px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
+              className="p-1.5 rounded-[3px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
               aria-label="به‌روزرسانی برنامه"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -197,9 +197,9 @@ export const DoctorDashboardPanel: React.FC<DoctorDashboardPanelProps> = ({ onNa
                   key={appointment.id}
                   type="button"
                   onClick={() => setSelected(appointment)}
-                  className="w-full text-right flex items-center gap-3 p-3 rounded-[12px] border border-line-soft hover:border-primary-line hover:bg-[#FBFDFD] transition-colors"
+                  className="w-full text-right flex items-center gap-3 p-3 rounded-[4px] border border-line-soft hover:border-primary-line hover:bg-[#fbf8f2] transition-colors"
                 >
-                  <div className="w-[62px] shrink-0 rounded-[10px] bg-primary-soft border border-primary-line text-primary-deep py-2 text-center">
+                  <div className="w-[62px] shrink-0 rounded-[3px] bg-primary-soft border border-line text-ink-soft py-2 text-center">
                     <div className="text-small font-extrabold tabular-nums">
                       {formatTimeFa(appointment.appointment_time)}
                     </div>
@@ -230,7 +230,7 @@ export const DoctorDashboardPanel: React.FC<DoctorDashboardPanelProps> = ({ onNa
             />
           </SectionCard>
 
-          <section className="d-ai-card p-5">
+          <section className="d-card p-5">
             <div className="flex items-center gap-1.5 text-small font-bold text-ai">
               <Sparkles className="w-3.5 h-3.5" />
               دستیار پزشک
@@ -239,15 +239,17 @@ export const DoctorDashboardPanel: React.FC<DoctorDashboardPanelProps> = ({ onNa
               گزارش نوبت‌های هفته، بار کاری و فهرست بیماران را با گفتگو بخواهید. هیچ تغییری بدون
               تأیید شما ثبت نمی‌شود.
             </p>
-            <Button
-              variant="ai"
-              size="sm"
-              className="w-full mt-4"
-              onClick={() => onNavigate('agent')}
-              icon={<Bot className="w-3.5 h-3.5" />}
-            >
-              گفتگو با دستیار
-            </Button>
+            <div className="mt-4 pt-3 border-t border-line-soft">
+              <Button
+                variant="ai"
+                size="sm"
+                className="w-full"
+                onClick={() => onNavigate('agent')}
+                icon={<Bot className="w-3.5 h-3.5" />}
+              >
+                گفتگو با دستیار
+              </Button>
+            </div>
           </section>
         </div>
       </div>

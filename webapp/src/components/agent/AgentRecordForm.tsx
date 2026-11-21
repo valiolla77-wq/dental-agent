@@ -115,12 +115,12 @@ export const AgentRecordForm: React.FC<{ compact?: boolean }> = ({ compact = fal
   return (
     <form
       onSubmit={handleSubmit}
-      className={`rounded-[14px] border border-primary-line bg-surface ${
+      className={`rounded-[4px] border border-primary-line bg-surface ${
         compact ? 'p-3' : 'p-4'
       } space-y-3`}
     >
       <div className="flex items-start gap-2.5">
-        <div className="shrink-0 w-8 h-8 rounded-full bg-primary-soft border border-primary-line flex items-center justify-center text-primary">
+        <div className="shrink-0 w-8 h-8 rounded-[3px] bg-surface-muted border border-primary-line flex items-center justify-center text-primary">
           {hasExisting ? <UserPlus className="w-4 h-4" /> : <FilePlus2 className="w-4 h-4" />}
         </div>
         <div className="min-w-0 flex-1">
@@ -137,7 +137,7 @@ export const AgentRecordForm: React.FC<{ compact?: boolean }> = ({ compact = fal
           <button
             type="button"
             onClick={closeSelfRecordForm}
-            className="shrink-0 p-1 rounded-lg text-faint hover:text-danger hover:bg-danger-soft"
+            className="shrink-0 p-1 rounded-[3px] text-faint hover:text-danger hover:bg-danger-soft"
             aria-label="بستن فرم"
           >
             <X className="w-4 h-4" />
@@ -150,7 +150,7 @@ export const AgentRecordForm: React.FC<{ compact?: boolean }> = ({ compact = fal
           <button
             type="button"
             onClick={() => switchRelation('self')}
-            className={`rounded-xl border px-2.5 py-2 text-right transition ${
+            className={`rounded-[3px] border px-2.5 py-2 text-right transition ${
               relation === 'self'
                 ? 'border-primary bg-primary-soft'
                 : 'border-line bg-surface hover:border-primary-line'
@@ -164,7 +164,7 @@ export const AgentRecordForm: React.FC<{ compact?: boolean }> = ({ compact = fal
           <button
             type="button"
             onClick={() => switchRelation('other')}
-            className={`rounded-xl border px-2.5 py-2 text-right transition ${
+            className={`rounded-[3px] border px-2.5 py-2 text-right transition ${
               relation === 'other'
                 ? 'border-primary bg-primary-soft'
                 : 'border-line bg-surface hover:border-primary-line'

@@ -228,7 +228,7 @@ export const DoctorsManageView: React.FC = () => {
                           title="شیفت‌های هفتگی"
                           aria-label={`شیفت‌های هفتگی ${doctor.full_name}`}
                           onClick={() => setScheduleModal(doctor)}
-                          className="p-2 rounded-[9px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
+                          className="p-2 rounded-[3px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
                         >
                           <CalendarPlus className="w-4 h-4" />
                         </button>
@@ -237,7 +237,7 @@ export const DoctorsManageView: React.FC = () => {
                           title="ویرایش پزشک"
                           aria-label={`ویرایش ${doctor.full_name}`}
                           onClick={() => setFormModal({ mode: 'edit', doctor })}
-                          className="p-2 rounded-[9px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
+                          className="p-2 rounded-[3px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
@@ -247,7 +247,7 @@ export const DoctorsManageView: React.FC = () => {
                           aria-label={`اتصال حساب ${doctor.full_name}`}
                           onClick={() => setLinkModal(doctor)}
                           disabled={!!doctor.user_id}
-                          className="p-2 rounded-[9px] text-faint hover:text-primary hover:bg-primary-soft transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                          className="p-2 rounded-[3px] text-faint hover:text-primary hover:bg-primary-soft transition-colors disabled:opacity-30 disabled:pointer-events-none"
                         >
                           <Link2 className="w-4 h-4" />
                         </button>
@@ -614,7 +614,7 @@ const SchedulesModal: React.FC<{
             {schedules.map((schedule) => (
               <li
                 key={schedule.id}
-                className="flex items-center justify-between gap-3 border border-line rounded-[12px] px-3.5 py-2.5"
+                className="flex items-center justify-between gap-3 border border-line rounded-[4px] px-3.5 py-2.5"
               >
                 <div className="min-w-0">
                   <div className="text-small font-bold text-ink">
@@ -634,7 +634,7 @@ const SchedulesModal: React.FC<{
                     type="button"
                     title={schedule.is_active ? 'توقف موقت' : 'فعال‌سازی'}
                     onClick={() => toggleActive(schedule)}
-                    className="p-2 rounded-[9px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
+                    className="p-2 rounded-[3px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
@@ -642,7 +642,7 @@ const SchedulesModal: React.FC<{
                     type="button"
                     title="حذف شیفت"
                     onClick={() => removeSchedule(schedule.id)}
-                    className="p-2 rounded-[9px] text-faint hover:text-danger hover:bg-danger-soft transition-colors"
+                    className="p-2 rounded-[3px] text-faint hover:text-danger hover:bg-danger-soft transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

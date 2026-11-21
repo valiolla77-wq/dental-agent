@@ -111,7 +111,7 @@ export const PatientsView: React.FC = () => {
         }
       />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-5">
+      <div className="d-stat-band grid grid-cols-2 xl:grid-cols-5 mb-5">
         <StatCard
           icon={<Users className="w-[18px] h-[18px]" />}
           label="کل پرونده‌ها"
@@ -144,6 +144,7 @@ export const PatientsView: React.FC = () => {
           value={toPersianDigits(linkedAccounts)}
           hint="از درگاه بیماران وارد می‌شوند"
           tone="soft"
+          className="col-span-2 xl:col-span-1"
         />
       </div>
 
@@ -233,7 +234,7 @@ export const PatientsView: React.FC = () => {
                         onClick={() => openDossier(patient)}
                         className="flex items-center gap-2.5 text-right"
                       >
-                        <span className="w-8 h-8 rounded-full bg-primary-soft border border-primary-line text-primary-deep text-small font-bold flex items-center justify-center shrink-0">
+                        <span className="w-8 h-8 rounded-[3px] bg-surface-muted border border-line text-ink-soft text-small font-bold flex items-center justify-center shrink-0">
                           {patient.full_name.charAt(0)}
                         </span>
                         <span>
@@ -278,7 +279,7 @@ export const PatientsView: React.FC = () => {
                           title="مشاهدهٔ پرونده"
                           aria-label={`مشاهدهٔ پروندهٔ ${patient.full_name}`}
                           onClick={() => openDossier(patient)}
-                          className="p-2 rounded-[9px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
+                          className="p-2 rounded-[3px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
                         >
                           <ChevronLeft className="w-4 h-4" />
                         </button>
@@ -289,7 +290,7 @@ export const PatientsView: React.FC = () => {
                               title="ویرایش اطلاعات"
                               aria-label={`ویرایش ${patient.full_name}`}
                               onClick={() => setDialog({ kind: 'edit', patient })}
-                              className="p-2 rounded-[9px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
+                              className="p-2 rounded-[3px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
                             >
                               <Pencil className="w-4 h-4" />
                             </button>
@@ -299,7 +300,7 @@ export const PatientsView: React.FC = () => {
                                 title="اتصال به حساب کاربری"
                                 aria-label={`اتصال ${patient.full_name} به حساب`}
                                 onClick={() => setDialog({ kind: 'link', patient })}
-                                className="p-2 rounded-[9px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
+                                className="p-2 rounded-[3px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
                               >
                                 <Link2 className="w-4 h-4" />
                               </button>
@@ -310,7 +311,7 @@ export const PatientsView: React.FC = () => {
                                 title="حذف پرونده"
                                 aria-label={`حذف پروندهٔ ${patient.full_name}`}
                                 onClick={() => setDialog({ kind: 'delete', patient })}
-                                className="p-2 rounded-[9px] text-faint hover:text-danger hover:bg-danger-soft transition-colors"
+                                className="p-2 rounded-[3px] text-faint hover:text-danger hover:bg-danger-soft transition-colors"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>

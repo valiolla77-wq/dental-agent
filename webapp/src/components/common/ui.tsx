@@ -17,61 +17,55 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   eyebrow,
   action,
 }) => (
-  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
+  <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
     <div className="min-w-0">
       {eyebrow && (
-        <div className="text-caption font-bold text-primary tracking-wide mb-1.5">{eyebrow}</div>
+        <div className="text-caption font-bold text-primary mb-1">{eyebrow}</div>
       )}
       <h1 className="d-title">{title}</h1>
       {subtitle && <p className="d-subtitle">{subtitle}</p>}
     </div>
-    {action && <div className="flex items-center gap-2 shrink-0 flex-wrap">{action}</div>}
+    {action && <div className="flex items-center gap-2 shrink-0 flex-wrap pb-1">{action}</div>}
   </div>
 );
 
 /* ------------------------------------------------------------------- stats */
 
 interface StatCardProps {
-  icon: React.ReactNode;
+  /* Kept so existing call sites stay valid; the paper system prints numbers,
+   * not icon bubbles, so the icon is intentionally not rendered. */
+  icon?: React.ReactNode;
   label: string;
   value: React.ReactNode;
   hint?: React.ReactNode;
+  /** @deprecated tone no longer paints the figure; kept for call-site compatibility. */
   tone?: 'teal' | 'ai' | 'danger' | 'warn' | 'soft';
   onClick?: () => void;
+  className?: string;
 }
 
-const TONE_CLASS: Record<string, string> = {
-  teal: '',
-  ai: 'ai',
-  danger: 'danger',
-  warn: 'warn',
-  soft: 'soft',
-};
-
+/**
+ * A printed cell: caption, figure, note. Inside `.d-stat-band` the cells share
+ * one rule, so a row of four reads as a single ledger line.
+ */
 export const StatCard: React.FC<StatCardProps> = ({
-  icon,
   label,
   value,
   hint,
-  tone = 'teal',
   onClick,
+  className = '',
 }) => (
   <div
-    className={`d-stat ${onClick ? 'cursor-pointer hover:border-primary-line transition-colors' : ''}`}
+    className={`d-stat ${className} ${
+      onClick ? 'cursor-pointer transition-colors hover:bg-[#fbf8f2]' : ''
+    }`}
     onClick={onClick}
     role={onClick ? 'button' : undefined}
     tabIndex={onClick ? 0 : undefined}
   >
-    <div className="flex items-start justify-between gap-3">
-      <span className={`d-icon-ring ${TONE_CLASS[tone] || ''}`}>{icon}</span>
-      <span className="text-caption font-medium text-muted leading-5 text-left">{label}</span>
-    </div>
-    <div className="flex items-end justify-between gap-3">
-      <div className="d-stat-value">{value}</div>
-      {hint && (
-        <div className="text-caption leading-5 text-faint text-left max-w-[55%]">{hint}</div>
-      )}
-    </div>
+    <div className="text-caption font-medium leading-5 text-muted">{label}</div>
+    <div className="d-stat-value">{value}</div>
+    {hint && <div className="text-caption leading-5 text-faint">{hint}</div>}
   </div>
 );
 
@@ -98,7 +92,7 @@ export const SectionCard: React.FC<SectionCardProps> = ({
 }) => (
   <section className={`d-card min-w-0 ${className}`}>
     {(title || action) && (
-      <div className="flex items-start justify-between gap-3 px-5 sm:px-6 pt-5 pb-4 border-b border-line-soft">
+      <div className="flex items-start justify-between gap-3 px-5 sm:px-6 pt-4 pb-3 border-b border-line">
         <div className="min-w-0">
           {title && <h2 className="d-section-title">{title}</h2>}
           {subtitle && <p className="d-section-sub">{subtitle}</p>}
@@ -166,7 +160,7 @@ export const Avatar: React.FC<{ name: string; size?: 'sm' | 'md' | 'lg' }> = ({
   const initial = (name || '؟').trim().charAt(0);
   return (
     <span
-      className={`${sizes[size]} rounded-full bg-primary-soft border border-primary-line text-primary-deep font-bold flex items-center justify-center shrink-0`}
+      className={`${sizes[size]} rounded-[3px] bg-surface-muted border border-line text-ink-soft font-bold flex items-center justify-center shrink-0`}
     >
       {initial}
     </span>
@@ -189,7 +183,7 @@ const BANNER_TONES: Record<string, string> = {
   ai: 'd-ai-card text-ai',
   warning: 'd-soft-warn text-warn',
   danger: 'd-soft-danger text-danger',
-  info: 'd-soft-info text-info',
+  info: 'd-note text-ink-soft',
 };
 
 export const InfoBanner: React.FC<InfoBannerProps> = ({
@@ -237,7 +231,7 @@ export const LoadingPanel: React.FC<{ message?: string }> = ({
   message = 'در حال دریافت داده‌ها از سرور...',
 }) => (
   <div className="py-12 flex flex-col items-center justify-center gap-3">
-    <div className="w-7 h-7 rounded-full border-2 border-primary-line border-t-[#087F83] animate-spin" />
+    <div className="w-7 h-7 rounded-full border-2 border-primary-line border-t-primary animate-spin" />
     <span className="text-small text-muted">{message}</span>
   </div>
 );
@@ -325,7 +319,7 @@ export const DonutChart: React.FC<{
   const background =
     total > 0
       ? `conic-gradient(${stops.join(', ')})`
-      : 'conic-gradient(#EEF2F6 0% 100%)';
+      : 'conic-gradient(#f4efe4 0% 100%)';
   return (
     <div
       className="d-donut"

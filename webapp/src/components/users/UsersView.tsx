@@ -187,7 +187,7 @@ export const UsersView: React.FC = () => {
 
       {error && <ErrorBanner message={error} onRetry={load} />}
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-5">
+      <div className="d-stat-band grid grid-cols-2 xl:grid-cols-4 mb-5">
         <StatCard
           icon={<Users className="w-[18px] h-[18px]" />}
           label="کل کاربران"
@@ -283,7 +283,7 @@ export const UsersView: React.FC = () => {
                   <tr key={user.id}>
                     <td>
                       <div className="flex items-center gap-2.5">
-                        <span className="w-8 h-8 rounded-full bg-primary-soft border border-primary-line text-primary-deep text-small font-bold flex items-center justify-center shrink-0">
+                        <span className="w-8 h-8 rounded-[3px] bg-surface-muted border border-line text-ink-soft text-small font-bold flex items-center justify-center shrink-0">
                           {user.full_name.charAt(0)}
                         </span>
                         <span className="font-semibold text-ink">{user.full_name}</span>
@@ -296,7 +296,7 @@ export const UsersView: React.FC = () => {
                       <select
                         value={user.role}
                         onChange={(event) => changeRole(user, event.target.value as UserRole)}
-                        className="h-8 rounded-[8px] border border-line bg-surface px-2 text-caption text-ink cursor-pointer focus:outline-none focus:border-primary"
+                        className="h-8 rounded-[3px] border border-line bg-surface px-2 text-caption text-ink cursor-pointer focus:outline-none focus:border-primary"
                         aria-label={`نقش ${user.full_name}`}
                       >
                         {ROLE_OPTIONS.map((role) => (

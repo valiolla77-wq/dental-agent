@@ -33,7 +33,7 @@ export const TOOTH_CONDITION_STYLES: Record<
     label: 'درمان‌شده',
   },
   needs_treatment: {
-    cell: 'bg-[#FFF7E6] border-[#F0B429] text-[#9A6700]',
+    cell: 'bg-warn-soft border-warn text-warn',
     label: 'نیاز به درمان',
   },
   extracted: {
@@ -65,7 +65,7 @@ const ToothCell: React.FC<{
       onClick={() => onSelect?.(fdi)}
       title={`دندان ${toPersianDigits(fdi)} — ${style.label}`}
       aria-label={`دندان ${toPersianDigits(fdi)}، ${style.label}`}
-      className={`w-8 h-9 sm:w-9 sm:h-10 rounded-[9px] border text-caption font-extrabold tabular-nums flex flex-col items-center justify-center gap-0.5 transition-all ${style.cell} ${
+      className={`w-8 h-9 sm:w-9 sm:h-10 rounded-[3px] border text-caption font-extrabold tabular-nums flex flex-col items-center justify-center gap-0.5 transition-all ${style.cell} ${
         selected
           ? 'ring-2 ring-offset-1 ring-primary ring-offset-white scale-[1.04]'
           : ''

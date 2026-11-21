@@ -159,7 +159,7 @@ export const PatientDashboardPanel: React.FC<PatientDashboardPanelProps> = ({
             {next ? (
               <>
                 <div className="mt-4 flex items-start gap-4">
-                  <div className="w-[76px] shrink-0 rounded-[14px] bg-primary-soft border border-primary-line text-center py-3">
+                  <div className="w-[76px] shrink-0 rounded-[4px] bg-primary-soft border border-primary-line text-center py-3">
                     <div className="text-caption text-primary-deep opacity-75">ساعت</div>
                     <div className="text-[19px] font-extrabold text-primary-deep tabular-nums leading-7">
                       {formatTimeFa(next.appointment_time)}
@@ -240,7 +240,7 @@ export const PatientDashboardPanel: React.FC<PatientDashboardPanelProps> = ({
         </div>
       </section>
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="d-stat-band grid grid-cols-2 xl:grid-cols-4">
         <StatCard
           icon={<CalendarDays className="w-[18px] h-[18px]" />}
           label="نوبت‌های پیش‌رو"
@@ -283,7 +283,7 @@ export const PatientDashboardPanel: React.FC<PatientDashboardPanelProps> = ({
               type="button"
               onClick={load}
               disabled={loading}
-              className="p-1.5 rounded-[8px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
+              className="p-1.5 rounded-[3px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
               aria-label="به‌روزرسانی"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -310,9 +310,9 @@ export const PatientDashboardPanel: React.FC<PatientDashboardPanelProps> = ({
                   key={appointment.id}
                   type="button"
                   onClick={() => setSelected(appointment)}
-                  className="w-full text-right flex items-center gap-3 p-3 rounded-[12px] border border-line-soft hover:border-primary-line hover:bg-[#FBFDFD] transition-colors"
+                  className="w-full text-right flex items-center gap-3 p-3 rounded-[4px] border border-line-soft hover:border-primary-line hover:bg-[#fbf8f2] transition-colors"
                 >
-                  <div className="w-[58px] shrink-0 rounded-[10px] bg-canvas border border-line text-ink py-2 text-center">
+                  <div className="w-[58px] shrink-0 rounded-[3px] bg-canvas border border-line text-ink py-2 text-center">
                     <div className="text-small font-extrabold tabular-nums">
                       {formatTimeFa(appointment.appointment_time)}
                     </div>
@@ -354,7 +354,7 @@ export const PatientDashboardPanel: React.FC<PatientDashboardPanelProps> = ({
                     key={item.label}
                     type="button"
                     onClick={item.onClick}
-                    className="rounded-[12px] border border-line bg-surface p-3 text-center hover:border-primary-line hover:bg-[#FBFDFD] transition-colors"
+                    className="rounded-[4px] border border-line bg-surface p-3 text-center hover:border-primary-line hover:bg-[#fbf8f2] transition-colors"
                   >
                     <Icon className="w-4 h-4 text-primary mx-auto mb-2" />
                     <span className="text-caption font-semibold text-ink">{item.label}</span>
@@ -372,9 +372,9 @@ export const PatientDashboardPanel: React.FC<PatientDashboardPanelProps> = ({
               {patientRecords.map((patient) => (
                 <div
                   key={patient.id}
-                  className="flex items-center gap-2 rounded-[10px] border border-line-soft bg-surface-muted px-3 py-2"
+                  className="flex items-center gap-2 rounded-[3px] border border-line-soft bg-surface-muted px-3 py-2"
                 >
-                  <div className="w-7 h-7 rounded-full bg-primary-soft text-primary flex items-center justify-center shrink-0">
+                  <div className="w-7 h-7 rounded-[3px] bg-surface-muted text-primary flex items-center justify-center shrink-0">
                     <UserRound className="w-3.5 h-3.5" />
                   </div>
                   <div className="min-w-0 flex-1">

@@ -51,7 +51,7 @@ export const ApiStatusModal: React.FC<ApiStatusModalProps> = ({ isOpen, onClose 
     >
       <div className="space-y-5 text-caption">
         <div
-          className={`p-3.5 rounded-xl border flex items-start gap-3 ${
+          className={`p-3.5 rounded-[3px] border flex items-start gap-3 ${
             healthState.status === 'connected'
               ? 'bg-primary-soft border-primary-line text-primary-deep'
               : 'bg-danger-soft border-danger-line text-danger'
@@ -90,7 +90,7 @@ export const ApiStatusModal: React.FC<ApiStatusModalProps> = ({ isOpen, onClose 
               type="text"
               value={apiClient.getBaseUrl() || '(همان میزبان فعلی)'}
               readOnly
-              className="flex-1 text-caption tabular-nums bg-canvas border border-line rounded-[9px] px-3 py-2 text-muted"
+              className="flex-1 text-caption tabular-nums bg-canvas border border-line rounded-[3px] px-3 py-2 text-muted"
               dir="ltr"
             />
             <Button
@@ -114,7 +114,7 @@ export const ApiStatusModal: React.FC<ApiStatusModalProps> = ({ isOpen, onClose 
         </div>
 
         {feedback && (
-          <div className="text-caption p-2.5 rounded-[9px] bg-canvas text-muted">
+          <div className="text-caption p-2.5 rounded-[3px] bg-canvas text-muted">
             {feedback}
           </div>
         )}
@@ -125,7 +125,7 @@ export const ApiStatusModal: React.FC<ApiStatusModalProps> = ({ isOpen, onClose 
             سرویس‌های اصلی
           </h4>
           <div
-            className="space-y-1 text-caption text-muted bg-canvas p-3 rounded-[9px] border border-line font-mono max-h-40 overflow-y-auto"
+            className="space-y-1 text-caption text-muted bg-canvas p-3 rounded-[3px] border border-line font-mono max-h-40 overflow-y-auto"
             dir="ltr"
           >
             <div>POST /auth/staff/login &nbsp;|&nbsp; POST /auth/otp/request</div>

@@ -111,10 +111,10 @@ export const PatientDossierModal: React.FC<PatientDossierModalProps> = ({
     >
       <div className="space-y-4">
         {/* Identity card */}
-        <div className="rounded-[16px] border border-line bg-surface-muted p-4">
+        <div className="rounded-[4px] border border-line bg-surface-muted p-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-12 h-12 rounded-full bg-primary-soft border border-primary-line text-primary-deep text-[17px] font-extrabold flex items-center justify-center shrink-0">
+              <div className="w-12 h-12 rounded-[3px] bg-surface-muted border border-line text-ink-soft text-[17px] font-extrabold flex items-center justify-center shrink-0">
                 {patient.full_name.charAt(0)}
               </div>
               <div className="min-w-0">
@@ -130,19 +130,19 @@ export const PatientDossierModal: React.FC<PatientDossierModalProps> = ({
               </div>
             </div>
             <div className="grid w-full grid-cols-3 gap-1.5 sm:w-auto sm:gap-2">
-              <div className="text-center px-2 py-2 rounded-[10px] bg-surface border border-line sm:px-3">
+              <div className="text-center px-2 py-2 rounded-[3px] bg-surface border border-line sm:px-3">
                 <div className="text-heading font-extrabold text-ink tabular-nums">
                   {toPersianDigits(patientAppointments.length)}
                 </div>
                 <div className="text-caption text-faint mt-0.5">کل نوبت</div>
               </div>
-              <div className="text-center px-2 py-2 rounded-[10px] bg-surface border border-line sm:px-3">
+              <div className="text-center px-2 py-2 rounded-[3px] bg-surface border border-line sm:px-3">
                 <div className="text-heading font-extrabold text-primary tabular-nums">
                   {toPersianDigits(upcomingCount)}
                 </div>
                 <div className="text-caption text-faint mt-0.5">پیش‌رو</div>
               </div>
-              <div className="text-center px-2 py-2 rounded-[10px] bg-surface border border-line sm:px-3">
+              <div className="text-center px-2 py-2 rounded-[3px] bg-surface border border-line sm:px-3">
                 <div className="text-heading font-extrabold text-muted tabular-nums">
                   {toPersianDigits(completedCount)}
                 </div>
@@ -218,10 +218,10 @@ export const PatientDossierModal: React.FC<PatientDossierModalProps> = ({
         <button
           type="button"
           onClick={() => setClinicalOpen(true)}
-          className="w-full rounded-[14px] border border-primary-line bg-[#FBFDFD] p-4 flex items-center justify-between gap-3 hover:bg-[#F3FAF9] transition-colors text-right"
+          className="w-full rounded-[4px] border border-primary-line bg-[#fbf8f2] p-4 flex items-center justify-between gap-3 hover:bg-[#fbf8f2] transition-colors text-right"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <span className="w-10 h-10 rounded-[12px] bg-primary-soft border border-primary-line text-primary-deep flex items-center justify-center shrink-0">
+            <span className="w-10 h-10 rounded-[4px] bg-primary-soft border border-line text-ink-soft flex items-center justify-center shrink-0">
               <HeartPulse className="w-5 h-5" />
             </span>
             <div className="min-w-0">
@@ -262,7 +262,7 @@ export const PatientDossierModal: React.FC<PatientDossierModalProps> = ({
               {patientAppointments.map((appointment) => (
                 <div
                   key={appointment.id}
-                  className="flex flex-col gap-2 rounded-[12px] border border-line p-3.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
+                  className="flex flex-col gap-2 rounded-[4px] border border-line p-3.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="text-small font-bold text-ink">

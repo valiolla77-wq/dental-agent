@@ -42,7 +42,9 @@ const PERMISSION_LABELS: Partial<Record<Permission, string>> = {
   view_doctors: 'مشاهده پزشکان',
   manage_services: 'مدیریت خدمات',
   view_services: 'مشاهده خدمات',
+  manage_staff: 'مدیریت پرسنل و دسترسی‌ها',
   use_agent: 'استفاده از دستیار',
+  view_api_spec: 'مشاهده مستندات فنی',
   manage_settings: 'تنظیمات سیستم',
 };
 
@@ -125,7 +127,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
         <SectionCard className="xl:col-span-2">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-full bg-primary-soft border border-primary-line text-primary-deep flex items-center justify-center text-[24px] font-extrabold shrink-0">
+              <div className="w-16 h-16 rounded-[3px] bg-surface-muted border border-line text-ink-soft flex items-center justify-center text-[24px] font-extrabold shrink-0">
                 {currentUser.full_name.charAt(0)}
               </div>
               <div className="min-w-0">
@@ -156,7 +158,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
-            <div className="rounded-[12px] border border-line p-4">
+            <div className="rounded-[4px] border border-line p-4">
               <div className="flex items-center gap-2 text-caption text-faint">
                 <Phone className="w-3.5 h-3.5" />
                 شماره تماس
@@ -165,7 +167,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
                 {toPersianDigits(currentUser.phone)}
               </div>
             </div>
-            <div className="rounded-[12px] border border-line p-4">
+            <div className="rounded-[4px] border border-line p-4">
               <div className="flex items-center gap-2 text-caption text-faint">
                 <UserRound className="w-3.5 h-3.5" />
                 پرونده متصل
@@ -182,7 +184,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
           </div>
 
           {role === 'patient' && patientRecords.length > 0 && (
-            <div className="mt-5 rounded-[12px] border border-line p-4">
+            <div className="mt-5 rounded-[4px] border border-line p-4">
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2 text-caption text-faint">
                   <UserRound className="w-3.5 h-3.5" />
@@ -196,7 +198,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
                 {patientRecords.map((patient) => (
                   <div
                     key={patient.id}
-                    className="flex items-center justify-between gap-2 rounded-[9px] bg-surface-muted border border-line-soft px-3 py-2"
+                    className="flex items-center justify-between gap-2 rounded-[3px] bg-surface-muted border border-line-soft px-3 py-2"
                   >
                     <span className="text-caption font-semibold text-ink truncate">
                       {patient.full_name}
@@ -280,7 +282,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
               value={editName}
               onChange={(event) => setEditName(event.target.value)}
               maxLength={150}
-              className="mt-1.5 w-full h-10 rounded-[10px] border border-line bg-surface px-3 text-small text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="mt-1.5 w-full h-10 rounded-[3px] border border-line bg-surface px-3 text-small text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
               autoFocus
             />
           </label>
@@ -304,7 +306,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
       </Modal>
 
       {nameSaved && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[110] rounded-full bg-primary text-on-accent text-small font-semibold px-4 py-2 shadow-lg d-fade">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[110] rounded-[3px] bg-primary text-on-accent text-small font-semibold px-4 py-2 d-fade">
           نام شما با موفقیت به‌روزرسانی شد ✓
         </div>
       )}

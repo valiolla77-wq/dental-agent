@@ -36,11 +36,11 @@ export const DoctorsView: React.FC = () => {
         {doctors.map((doctor) => (
           <div
             key={doctor.id}
-            className="bg-surface rounded-xl border border-line shadow-2xs overflow-hidden flex flex-col justify-between"
+            className="bg-surface rounded-[3px] border border-line overflow-hidden flex flex-col justify-between"
           >
             <div className="p-5 space-y-4">
               <div className="flex items-start gap-3.5">
-                <div className="w-12 h-12 rounded-xl bg-primary-soft border border-primary-line/80 flex items-center justify-center text-primary-deep shrink-0">
+                <div className="w-12 h-12 rounded-[3px] bg-primary-soft border border-primary-line/80 flex items-center justify-center text-primary-deep shrink-0">
                   <Stethoscope className="w-6 h-6" />
                 </div>
                 <div className="flex-1 min-w-0">

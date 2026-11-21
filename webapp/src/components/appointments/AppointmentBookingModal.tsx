@@ -380,7 +380,7 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
                 <button
                   type="button"
                   onClick={() => setNotesOpen(true)}
-                  className={`inline-flex items-center gap-1.5 rounded-[8px] py-1 text-small font-semibold text-primary ${FOCUS_RING}`}
+                  className={`inline-flex items-center gap-1.5 rounded-[3px] py-1 text-small font-semibold text-primary ${FOCUS_RING}`}
                 >
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                   افزودن توضیح برای پزشک

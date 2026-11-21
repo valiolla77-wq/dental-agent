@@ -136,7 +136,7 @@ export const ReceptionistDashboardPanel: React.FC<ReceptionistDashboardPanelProp
     <div className="space-y-5">
       {error && <ErrorBanner message={error} onRetry={load} />}
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="d-stat-band grid grid-cols-2 xl:grid-cols-4">
         <StatCard
           icon={<CalendarDays className="w-[18px] h-[18px]" />}
           label="نوبت‌های امروز"
@@ -203,7 +203,7 @@ export const ReceptionistDashboardPanel: React.FC<ReceptionistDashboardPanelProp
               key={item.title}
               type="button"
               onClick={item.onClick}
-              className="d-card p-4 text-right hover:border-primary-line hover:bg-[#FBFDFD] transition-colors"
+              className="d-card p-4 text-right hover:border-primary-line hover:bg-[#fbf8f2] transition-colors"
             >
               <span className="d-icon-ring mb-3">
                 <Icon className="w-4 h-4" />
@@ -243,9 +243,9 @@ export const ReceptionistDashboardPanel: React.FC<ReceptionistDashboardPanelProp
                   key={appointment.id}
                   type="button"
                   onClick={() => setSelected(appointment)}
-                  className="w-full text-right flex items-center gap-3 p-3 rounded-[12px] border border-line-soft hover:border-primary-line hover:bg-[#FBFDFD] transition-colors"
+                  className="w-full text-right flex items-center gap-3 p-3 rounded-[4px] border border-line-soft hover:border-primary-line hover:bg-[#fbf8f2] transition-colors"
                 >
-                  <div className="w-[62px] shrink-0 rounded-[10px] bg-primary-soft border border-primary-line text-primary-deep py-2 text-center">
+                  <div className="w-[62px] shrink-0 rounded-[3px] bg-primary-soft border border-line text-ink-soft py-2 text-center">
                     <div className="text-small font-extrabold tabular-nums">
                       {formatTimeFa(appointment.appointment_time)}
                     </div>
@@ -277,7 +277,7 @@ export const ReceptionistDashboardPanel: React.FC<ReceptionistDashboardPanelProp
               type="button"
               onClick={load}
               disabled={loading}
-              className="p-1.5 rounded-[8px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
+              className="p-1.5 rounded-[3px] text-faint hover:text-primary hover:bg-primary-soft transition-colors"
               aria-label="به‌روزرسانی"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -299,7 +299,7 @@ export const ReceptionistDashboardPanel: React.FC<ReceptionistDashboardPanelProp
               {(incomplete || []).slice(0, 5).map((patient) => (
                 <div
                   key={patient.id}
-                  className="rounded-[12px] border border-line-soft p-3 flex items-center justify-between gap-2"
+                  className="rounded-[4px] border border-line-soft p-3 flex items-center justify-between gap-2"
                 >
                   <div className="min-w-0">
                     <div className="text-small font-bold text-ink truncate">
@@ -372,7 +372,7 @@ export const ReceptionistDashboardPanel: React.FC<ReceptionistDashboardPanelProp
                       <tr key={patient.id}>
                         <td>
                           <div className="flex items-center gap-2.5">
-                            <span className="w-7 h-7 rounded-full bg-primary-soft border border-primary-line text-primary-deep text-caption font-bold flex items-center justify-center">
+                            <span className="w-7 h-7 rounded-[3px] bg-surface-muted border border-line text-ink-soft text-caption font-bold flex items-center justify-center">
                               {patient.full_name.charAt(0)}
                             </span>
                             <span className="font-semibold text-ink">{patient.full_name}</span>
@@ -406,7 +406,7 @@ export const ReceptionistDashboardPanel: React.FC<ReceptionistDashboardPanelProp
           )}
         </SectionCard>
 
-        <section className="d-ai-card p-5 sm:p-6 flex flex-col justify-between">
+        <section className="d-card p-5 sm:p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center gap-1.5 text-small font-bold text-ai">
               <Sparkles className="w-3.5 h-3.5" />
@@ -418,13 +418,9 @@ export const ReceptionistDashboardPanel: React.FC<ReceptionistDashboardPanelProp
             <p className="text-caption text-muted mt-2 leading-6">
               دستیار فقط پیشنهاد می‌دهد؛ هر تغییر پس از تأیید صریح شما در سرور ثبت می‌شود.
             </p>
-            <div className="mt-4 space-y-2 text-caption text-muted">
-              <div className="bg-surface/70 border border-ai-line rounded-[10px] px-3 py-2">
-                «برای مراجع جدید نوبت دکتر شمس را بررسی کن»
-              </div>
-              <div className="bg-surface/70 border border-ai-line rounded-[10px] px-3 py-2">
-                «پرونده‌های ناقص امروز را نشان بده»
-              </div>
+            <div className="mt-4 divide-y divide-line-soft border-y border-line-soft text-caption text-muted">
+              <div className="py-2 leading-6">«برای مراجع جدید نوبت دکتر شمس را بررسی کن»</div>
+              <div className="py-2 leading-6">«پرونده‌های ناقص امروز را نشان بده»</div>
             </div>
           </div>
           <Button

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { ConnectionBanner } from '../common/ConnectionBanner';
@@ -74,22 +74,21 @@ export const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-canvas flex" dir="rtl">
+    <div className="min-h-screen bg-canvas flex flex-col" dir="rtl">
+      <Header
+        currentView={currentView}
+        onSelectView={setCurrentView}
+        onOpenMobileMenu={() => setMobileMenuOpen(true)}
+      />
+      <ConnectionBanner />
+      <main className="flex-1 min-w-0">{renderActiveView()}</main>
+
       <Sidebar
         currentView={currentView}
         onSelectView={setCurrentView}
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
       />
-
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header
-          onOpenMobileMenu={() => setMobileMenuOpen(true)}
-          onNavigate={setCurrentView}
-        />
-        <ConnectionBanner />
-        <main className="flex-1 min-w-0">{renderActiveView()}</main>
-      </div>
 
       <AgentDrawer />
     </div>
