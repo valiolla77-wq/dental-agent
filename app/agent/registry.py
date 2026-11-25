@@ -14,6 +14,7 @@ from app.agent_tools.schemas import (
     CancelAppointmentInput,
     ClinicOverviewStatsInput,
     CreatePatientInput,
+    CreateTreatmentPlanDraftInput,
     FeedbackSummaryInput,
     FindAvailableSlotsInput,
     FindDoctorsForServiceInput,
@@ -22,6 +23,7 @@ from app.agent_tools.schemas import (
     GetDoctorDayPlanInput,
     GetDoctorSchedulesInput,
     GetPatientAppointmentsInput,
+    GetPatientClinicalSummaryInput,
     MyProfileInput,
     PatientSummaryInput,
     RescheduleAppointmentInput,
@@ -73,6 +75,9 @@ class ToolDefinition:
     # Patient-only tools are the mirror image of ``staff_only``: they are
     # hidden from staff sessions and fail closed for staff identities.
     patient_only: bool = False
+    # Doctor-only tools are additionally hidden from admin/receptionist
+    # sessions; ``authorize_tool_call`` enforces the same pin server-side.
+    doctor_only: bool = False
 
 
 TOOL_REGISTRY: dict[str, ToolDefinition] = {
@@ -98,8 +103,11 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         "find_available_slots",
         "read",
         "ساعت‌های واقعاً آزاد یک پزشک برای یک خدمت در یک روز مشخص "
-        "(تاریخ جلالی). فقط وقتی تاریخ و پزشک مشخص‌اند؛ در غیر این صورت "
-        "find_nearest_appointments را صدا بزن.",
+        "(تاریخ جلالی). هر وقت بیمار روز مشخصی نام برد (مثل «شنبهٔ آینده» "
+        "یا «فردا») باید همین Tool را برای دقیقاً همان روز صدا بزنی؛ اگر "
+        "پزشک را نام نبرده است، اول پزشکان خدمت را با "
+        "find_doctors_for_service بگیر و برای همان روز بررسی کن. برای "
+        "روز مشخص هرگز find_nearest_appointments را جایگزین نکن.",
         FindAvailableSlotsInput,
         tools.find_available_slots,
     ),
@@ -108,7 +116,11 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         "read",
         "نزدیک‌ترین نوبت‌های واقعاً آزاد یک خدمت مشخص در ۳۰ روز آینده "
         "(پزشک، خدمت، تاریخ جلالی، ساعت). ابتدا service_id را از "
-        "search_dental_services بگیر؛ تاریخ لازم نیست.",
+        "search_dental_services بگیر؛ تاریخ لازم نیست. فقط وقتی بیمار "
+        "«نزدیک‌ترین» نوبت را می‌خواهد یا هیچ روز مشخصی نام نبرده است؛ "
+        "برای روز مشخص از find_available_slots استفاده کن. اگر بیمار "
+        "خدمت مشخصی نام نبرده است، برای «معاینه اولیه دندانپزشکی» "
+        "(خدمت پیش‌فرض اولین مراجعه) صدا بزن و سؤال «چه خدمتی؟» نپرس.",
         FindNearestAppointmentsInput,
         tools.find_nearest_appointments,
     ),
@@ -200,6 +212,34 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         input_schema=PatientSummaryInput,
         handler=tools.get_patient_summary,
         staff_only=True,
+    ),
+    "get_patient_clinical_summary": ToolDefinition(
+        name="get_patient_clinical_summary",
+        operation="read",
+        description=(
+            "خلاصهٔ بالینی یک بیمار (حساسیت‌ها، یادداشت‌های درمانی اخیر، "
+            "دندان‌های علامت‌خورده در چارت، ردیف‌های باز طرح درمان و آخرین "
+            "نسخه) فقط برای حساب‌های کارکنان و پزشک. patient_id را از "
+            "search_patients بگیر. حساب بیمار به این Tool دسترسی ندارد، "
+            "حتی برای پروندهٔ خودش."
+        ),
+        input_schema=GetPatientClinicalSummaryInput,
+        handler=tools.get_patient_clinical_summary,
+        staff_only=True,
+    ),
+    "create_treatment_plan_draft": ToolDefinition(
+        name="create_treatment_plan_draft",
+        operation="write",
+        description=(
+            "پیشنهاد ثبت یک ردیف «پیش‌نویس» طرح درمان برای بیمار، فقط "
+            "برای حساب پزشک. پیش‌نویس جزو برنامهٔ درمانی فعال بیمار نیست "
+            "و هیچ‌وقت خودکار نهایی یا تأیید نمی‌شود. اجرا فقط پس از "
+            "تأیید معتبر کاربر در رابط انجام می‌شود."
+        ),
+        input_schema=CreateTreatmentPlanDraftInput,
+        handler=tools.create_treatment_plan_draft,
+        staff_only=True,
+        doctor_only=True,
     ),
     "get_doctor_schedules": ToolDefinition(
         name="get_doctor_schedules",
@@ -391,6 +431,10 @@ def get_llm_tool_schemas(
                 continue
             if definition.admin_only and role != "admin":
                 # Receptionist/doctor sessions never see admin-only tools.
+                continue
+            if definition.doctor_only and role != "doctor":
+                # Only doctor sessions see doctor-only tools (e.g. treatment
+                # plan drafts); admins use the panel for clinical writes.
                 continue
             if definition.staff_only and not _staff_tool_visible(
                 definition, role, actor

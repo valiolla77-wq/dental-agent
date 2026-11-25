@@ -380,6 +380,11 @@ _TOOL_ACTIONS: dict[str, str] = {
     "get_clinic_overview_stats": "report:overview",
     "search_patients": "patient:search",
     "get_patient_summary": "patient:read",
+    # Clinical record tools: the summary is a staff/doctor read over the
+    # clinical models; the draft writer is additionally pinned to doctor
+    # accounts in ``authorize_tool_call`` (see the branch there).
+    "get_patient_clinical_summary": "clinical:read",
+    "create_treatment_plan_draft": "clinical:write",
     "get_doctor_schedules": "clinic:read",
     "get_doctor_day_plan": "appointment:read",
     "get_user_reports_summary": "report:feedback",
@@ -436,6 +441,16 @@ async def authorize_tool_call(
         return
     if tool_name in _STAFF_RECORD_TOOLS:
         if role == "patient":
+            raise AppError("COMMON_FORBIDDEN")
+        require_action(actor, action)
+        return
+    if tool_name == "create_treatment_plan_draft":
+        # Draft treatment plans are a clinician-only proposal channel: even
+        # administrators and receptionists (who hold clinical:write/read for
+        # the panel) may not create one through the agent. The coarse matrix
+        # check still applies on top, so a pinned deny override on the
+        # doctor account wins.
+        if role != "doctor":
             raise AppError("COMMON_FORBIDDEN")
         require_action(actor, action)
         return

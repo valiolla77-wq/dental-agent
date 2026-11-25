@@ -13,6 +13,7 @@ displayed — even after a page reload.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -22,15 +23,19 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Request
 from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent import agent_graph, create_initial_state
+from app.agent.appointment_selection import explicit_clock_times
 from app.agent.confirmations import confirmation_store
 from app.agent.graph import AGENT_RECURSION_LIMIT, safe_tool_call_for_history
 from app.agent.llm import ToolCallingChatModel, create_chat_model, load_llm_config
 from app.agent.options import (
+    anchor_requested_time,
     booking_args_for_option,
     build_active_options,
+    build_merged_slot_options,
     build_patient_options,
     build_selection_instruction,
     list_option_items,
@@ -44,6 +49,8 @@ from app.auth.dependencies import chat_rate_limit, get_current_user
 from app.auth.permissions import linked_patient_ids
 from app.database import get_db
 from app.errors import AppError
+from app.models.dental_service import DentalService
+from app.models.doctor import Doctor
 from app.models.user import User
 from app.services import chat_history, patient_service
 
@@ -270,18 +277,63 @@ def _last_tool_call_service_id(result: dict) -> int | None:
     return None
 
 
+_SLOT_TOOL_NAMES = {"find_available_slots", "find_nearest_appointments"}
+
+
+def _turn_tool_events(result: dict) -> list[tuple[str, Any]]:
+    """All tool results of this turn, in execution order.
+
+    Read from the graph's tool messages (validated tool output only; the
+    model's prose is never parsed).
+    """
+    events: list[tuple[str, Any]] = []
+    for message in result.get("messages") or []:
+        if not isinstance(message, dict) or message.get("role") != "tool":
+            continue
+        name = message.get("name")
+        content = message.get("content")
+        if not isinstance(name, str) or not isinstance(content, str):
+            continue
+        try:
+            parsed = json.loads(content)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict):
+            events.append((name, parsed))
+    return events
+
+
 def _turn_active_options(
     result: dict,
+    *,
+    requested_times: set[str] | None = None,
 ) -> tuple[str | None, dict[str, Any] | None]:
     """Decide the conversation's active option set after this turn.
 
     A successful read listing becomes the new set; a write proposal or an
     executed write clears the previous set so a stale «گزینه ۲» can never
     select a removed slot.
+
+    When the turn produced slot results from more than one call (e.g. the
+    same day checked for two doctors), all of them are merged into a
+    single appointment set: storing only the last call's slots made a
+    numeric pick resolve against a different list than the one the user
+    was shown. A single slot result keeps the historical per-tool shape.
+    Either way, when the user's request names exactly one clock time and
+    that time is offered, it is anchored to the front of the set so a
+    bare «۱» means the slot the user actually asked for.
     """
     name = result.get("last_tool_name")
     if not isinstance(name, str) or name in _WRITE_TOOL_NAMES:
         return None, None
+    times = requested_times or set()
+    events = _turn_tool_events(result)
+    slot_events = [event for event in events if event[0] in _SLOT_TOOL_NAMES]
+    if len(slot_events) >= 2:
+        merged = build_merged_slot_options(events)
+        if merged is not None:
+            kind, payload = merged
+            return kind, anchor_requested_time(kind, payload, times)
     doctor_service_context: dict[int, int] = {}
     if name == "find_doctors_for_service":
         service_id = _last_tool_call_service_id(result)
@@ -301,7 +353,53 @@ def _turn_active_options(
     )
     if options is None:
         return None, None
-    return options
+    kind, payload = options
+    return kind, anchor_requested_time(kind, payload, times)
+
+
+async def _fill_appointment_option_names(
+    db: AsyncSession, payload: dict[str, Any]
+) -> None:
+    """Fill doctor/service names on merged slot items from the database.
+
+    find_available_slots results carry ids only; the merged appointment
+    set needs display names, and they must come from database records —
+    never from model text.
+    """
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return
+    doctor_ids = {
+        item.get("doctor_id")
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("doctor_id"), int)
+    }
+    service_ids = {
+        item.get("service_id")
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("service_id"), int)
+    }
+    doctors: dict[int, str] = {}
+    services: dict[int, str] = {}
+    if doctor_ids:
+        rows = (
+            await db.execute(select(Doctor).where(Doctor.id.in_(doctor_ids)))
+        ).scalars()
+        doctors = {row.id: row.full_name for row in rows}
+    if service_ids:
+        rows = (
+            await db.execute(
+                select(DentalService).where(DentalService.id.in_(service_ids))
+            )
+        ).scalars()
+        services = {row.id: row.name for row in rows}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if not item.get("doctor_name"):
+            item["doctor_name"] = doctors.get(item.get("doctor_id"), "")
+        if not item.get("label"):
+            item["label"] = services.get(item.get("service_id"), "")
 
 
 def _tool_error_code(result: dict) -> str | None:
@@ -733,7 +831,18 @@ async def agent_chat(
     if forced_options is not None:
         kind, option_payload = forced_options
     else:
-        kind, option_payload = _turn_active_options(result)
+        requested_times: set[str] = set()
+        for entry in history:
+            if entry.get("role") == "user":
+                requested_times |= explicit_clock_times(
+                    str(entry.get("content") or "")
+                )
+        requested_times |= explicit_clock_times(payload.message)
+        kind, option_payload = _turn_active_options(
+            result, requested_times=requested_times
+        )
+        if kind == "appointment" and isinstance(option_payload, dict):
+            await _fill_appointment_option_names(db, option_payload)
     if conversation is not None:
         await chat_history.save_active_options(
             db, conversation=conversation, kind=kind, payload=option_payload

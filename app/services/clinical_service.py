@@ -507,6 +507,64 @@ async def create_plan_item(
     return item
 
 
+async def create_plan_item_draft(
+    db: AsyncSession,
+    *,
+    patient: Patient,
+    actor: User,
+    title: str,
+    tooth_fdi: int | None = None,
+    notes: str | None = None,
+    commit: bool = True,
+) -> TreatmentPlanItem:
+    """Append one draft plan item proposed through the chat agent.
+
+    Mirrors :func:`create_plan_item` (same validation, doctor resolution and
+    audit discipline) but the row is born ``draft``: it is a proposal for the
+    treating doctor to review, never a live roadmap entry, and this function
+    never moves it to any other status.
+    """
+    clean_title = (title or "").strip()
+    if len(clean_title) < 2:
+        raise AppError("TREATMENT_PLAN_INVALID")
+    clean_tooth = _validate_tooth_fdi(tooth_fdi)
+    resolved_doctor_id = await _resolve_doctor_id(db, actor, None)
+    now = _utc_now_naive()
+
+    item = TreatmentPlanItem(
+        patient_id=patient.id,
+        doctor_id=resolved_doctor_id,
+        tooth_fdi=clean_tooth,
+        title=clean_title,
+        status="draft",
+        notes=notes.strip() if notes else None,
+        created_by_user_id=int(actor.id),
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(item)
+
+    await audit_service.record_audit(
+        db,
+        actor=actor,
+        action="clinical.plan_item_draft_create",
+        target_label=patient.full_name,
+        detail={
+            "patient_id": patient.id,
+            "tooth_fdi": clean_tooth,
+            "status": "draft",
+            "via": "agent",
+        },
+    )
+
+    if commit:
+        await db.commit()
+        await db.refresh(item)
+    else:
+        await db.flush()
+    return item
+
+
 async def update_plan_item_status(
     db: AsyncSession,
     *,

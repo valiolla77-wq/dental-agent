@@ -34,6 +34,23 @@ def _latest_user_text(state: AgentState) -> str:
     return ""
 
 
+def _all_user_texts(state: AgentState) -> list[str]:
+    """Return every user-visible request text in the conversation, in order."""
+    return [
+        _message_content_to_text(item.get("content", ""))
+        for item in state.get("messages", [])
+        if item.get("role") == "user"
+    ]
+
+
+def _latest_assistant_text(state: AgentState) -> str:
+    """Return the latest assistant reply text (tool calls excluded)."""
+    for item in reversed(state.get("messages", [])):
+        if item.get("role") == "assistant" and not item.get("tool_calls"):
+            return _message_content_to_text(item.get("content", ""))
+    return ""
+
+
 def _message_content_to_text(content: Any) -> str:
     if isinstance(content, str):
         return content

@@ -181,6 +181,146 @@ def _ordinal_index(word: str) -> int:
     return _ORDINAL_WORDS[word]
 
 
+def _nearest_items(result_data: Any) -> list[dict[str, Any]]:
+    """Appointment option items from a find_nearest_appointments payload."""
+    if not isinstance(result_data, dict):
+        return []
+    appointments = result_data.get("appointments")
+    if not isinstance(appointments, list) or not appointments:
+        return []
+    items = []
+    for item in appointments[:10]:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("service_name") or "").strip()
+        doctor = str(item.get("doctor_name") or "").strip()
+        date = str(item.get("appointment_date") or "").strip()
+        time = str(item.get("appointment_time") or "").strip()
+        if not (name and doctor and date and time):
+            continue
+        items.append(
+            {
+                "kind": "appointment",
+                "label": name,
+                "doctor_name": doctor,
+                "doctor_id": _as_int(item.get("doctor_id")),
+                "service_id": _as_int(item.get("service_id")),
+                "appointment_date": date,
+                "appointment_time": time,
+            }
+        )
+    return items
+
+
+def _slot_items(result_data: Any) -> list[dict[str, Any]]:
+    """Appointment option items from a find_available_slots payload.
+
+    Names are not part of that tool's payload; the router fills them from
+    the database before the set is stored or rendered.
+    """
+    if not isinstance(result_data, dict):
+        return []
+    slots = result_data.get("available_slots")
+    if not isinstance(slots, list) or not slots:
+        return []
+    doctor_id = _as_int(result_data.get("doctor_id"))
+    service_id = _as_int(result_data.get("service_id"))
+    date = str(result_data.get("appointment_date") or "").strip()
+    if not doctor_id or not service_id or not date:
+        return []
+    items = []
+    seen: set[str] = set()
+    for slot in slots:
+        text = str(slot or "").strip()
+        clock = text[:5] if ":" in text[:5] else (text.split("T")[-1][:5] if text else "")
+        if not clock or ":" not in clock or clock in seen:
+            continue
+        seen.add(clock)
+        items.append(
+            {
+                "kind": "appointment",
+                "label": "",
+                "doctor_name": "",
+                "doctor_id": doctor_id,
+                "service_id": service_id,
+                "appointment_date": date,
+                "appointment_time": clock,
+            }
+        )
+    return items
+
+
+def build_merged_slot_options(
+    tool_events: list[tuple[str, Any]],
+    *,
+    limit: int = 10,
+) -> tuple[str, dict[str, Any]] | None:
+    """Merge every slot-bearing read result of a turn into one option set.
+
+    A turn may check slots for several doctors (one find_available_slots
+    call each). Storing only the last call's result — the old behaviour —
+    made a numeric pick resolve against a different list than the one the
+    user was shown, so «۱» could book another doctor/service/time than the
+    first displayed option. Merging all of the turn's slot results, in
+    call order and deduplicated, keeps the stored set aligned with what
+    the turn actually offered.
+    """
+    items: list[dict[str, Any]] = []
+    seen: set[tuple[Any, Any, Any, Any]] = set()
+    for name, result in tool_events:
+        if not isinstance(result, dict) or not result.get("ok"):
+            continue
+        if name == "find_nearest_appointments":
+            candidates = _nearest_items(result.get("data"))
+        elif name == "find_available_slots":
+            candidates = _slot_items(result.get("data"))
+        else:
+            continue
+        for item in candidates:
+            key = (
+                item.get("doctor_id"),
+                item.get("service_id"),
+                item.get("appointment_date"),
+                item.get("appointment_time"),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(item)
+    if not items:
+        return None
+    return ("appointment", {"items": items[:limit]})
+
+
+def anchor_requested_time(
+    kind: str, payload: dict[str, Any], requested_times: set[str]
+) -> dict[str, Any]:
+    """Move the slot the user explicitly asked for to the front of a set.
+
+    When the request names exactly one clock time («فردا ساعت ۱۰») and that
+    time is among the offered slots, a bare «۱» must mean that slot — not
+    whatever happens to be first in the day's raw slot order.
+    """
+    if len(requested_times) != 1 or not isinstance(payload, dict):
+        return payload
+    target = next(iter(requested_times))
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return payload
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        clock = str(
+            item.get("appointment_time") or item.get("time") or ""
+        ).strip()[:5]
+        if clock == target:
+            if index == 0:
+                return payload
+            reordered = [item, *items[:index], *items[index + 1 :]]
+            return {**payload, "items": reordered}
+    return payload
+
+
 def build_active_options(
     last_tool_name: str | None,
     last_tool_result: Any,
@@ -205,32 +345,7 @@ def build_active_options(
     result_data = last_tool_result.get("data")
 
     if last_tool_name == "find_nearest_appointments":
-        if not isinstance(result_data, dict):
-            return None
-        appointments = result_data.get("appointments")
-        if not isinstance(appointments, list) or not appointments:
-            return None
-        items = []
-        for item in appointments[:10]:
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("service_name") or "").strip()
-            doctor = str(item.get("doctor_name") or "").strip()
-            date = str(item.get("appointment_date") or "").strip()
-            time = str(item.get("appointment_time") or "").strip()
-            if not (name and doctor and date and time):
-                continue
-            items.append(
-                {
-                    "kind": "appointment",
-                    "label": name,
-                    "doctor_name": doctor,
-                    "doctor_id": _as_int(item.get("doctor_id")),
-                    "service_id": _as_int(item.get("service_id")),
-                    "appointment_date": date,
-                    "appointment_time": time,
-                }
-            )
+        items = _nearest_items(result_data)
         return ("appointment", {"items": items}) if items else None
 
     if last_tool_name == "find_available_slots":

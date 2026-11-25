@@ -21,10 +21,13 @@ from app.agent_tools.schemas import (
     BookAppointmentToolData,
     CancelAppointmentInput,
     CancelAppointmentToolData,
+    ClinicalEntryToolItem,
     ClinicAppointmentsReportToolData,
     ClinicOverviewStatsToolData,
     CreatePatientInput,
     CreatePatientToolData,
+    CreateTreatmentPlanDraftInput,
+    CreateTreatmentPlanDraftToolData,
     DayPlanAppointmentItem,
     DentalServiceToolItem,
     DoctorAppointmentStatItem,
@@ -41,15 +44,18 @@ from app.agent_tools.schemas import (
     GetDoctorDayPlanInput,
     GetDoctorSchedulesInput,
     GetPatientAppointmentsInput,
+    GetPatientClinicalSummaryInput,
     MyProfileRecordItem,
     MyProfileToolData,
     NearestAppointmentsToolData,
     NearestAppointmentToolItem,
     PatientAppointmentToolItem,
+    PatientClinicalSummaryToolData,
     PatientSearchToolItem,
     PatientSummaryAppointmentItem,
     PatientSummaryInput,
     PatientSummaryToolData,
+    PrescriptionToolItem,
     RescheduleAppointmentInput,
     RescheduleAppointmentToolData,
     SearchDentalServicesInput,
@@ -58,6 +64,8 @@ from app.agent_tools.schemas import (
     StaffDirectoryToolData,
     SubmitFeedbackInput,
     SubmitFeedbackToolData,
+    ToothStatusToolItem,
+    TreatmentPlanToolItem,
     UpdatePatientInput,
     UpdatePatientToolData,
 )
@@ -77,6 +85,7 @@ from app.models.user import User
 from app.services import (
     appointment_service,
     booking_service,
+    clinical_service,
     dental_service_service,
     patient_service,
     report_service,
@@ -734,6 +743,94 @@ async def get_patient_summary(
     return await _execute_tool("get_patient_summary", operation)
 
 
+async def get_patient_clinical_summary(
+    db: AsyncSession,
+    patient_id: int,
+    *,
+    actor: User | None = None,
+) -> AgentToolResult[PatientClinicalSummaryToolData]:
+    """Compact clinical snapshot of one record; staff/doctor accounts only.
+
+    Assembled from the clinical view service (entries, tooth chart,
+    prescriptions, treatment plan) and deliberately bounded: allergy titles
+    in full, at most five recent entries, only non-healthy teeth, open plan
+    items and the latest active prescription's drug names. The national id
+    that the raw view carries is never copied into this payload.
+    """
+
+    async def operation() -> PatientClinicalSummaryToolData:
+        request = GetPatientClinicalSummaryInput(patient_id=patient_id)
+        await authorize_tool_call(
+            db,
+            actor,
+            "get_patient_clinical_summary",
+            request.model_dump(),
+        )
+        patient = await patient_service.get_patient(db, request.patient_id)
+        view = await clinical_service.get_patient_clinical_view(db, patient)
+        entries = view["entries"]
+        prescriptions = [
+            row for row in view["prescriptions"] if row["cancelled_at"] is None
+        ]
+        latest_prescription: PrescriptionToolItem | None = None
+        if prescriptions:
+            latest = prescriptions[0]
+            latest_prescription = PrescriptionToolItem(
+                medication_names=[
+                    str(item.get("name") or "")
+                    for item in latest["items"]
+                    if isinstance(item, dict) and item.get("name")
+                ][:5],
+                created_at=" ".join(
+                    gregorian_to_jalali(latest["created_at"])
+                ),
+            )
+        return PatientClinicalSummaryToolData(
+            patient_id=int(patient.id),
+            full_name=patient.full_name,
+            record_status=patient.record_status,
+            allergies=[
+                str(row["title"])
+                for row in entries
+                if row["kind"] == "allergy"
+            ][:10],
+            recent_entries=[
+                ClinicalEntryToolItem(
+                    kind=str(row["kind"]),
+                    title=str(row["title"]),
+                    tooth_fdi=row["tooth_fdi"],
+                    created_at=" ".join(
+                        gregorian_to_jalali(row["created_at"])
+                    ),
+                )
+                for row in entries[:5]
+            ],
+            flagged_teeth=[
+                ToothStatusToolItem(
+                    tooth_fdi=int(row["tooth_fdi"]),
+                    status=str(row["status"]),
+                    note=row["note"],
+                )
+                for row in view["teeth"]
+                if row["status"] != "healthy"
+            ],
+            open_plan_items=[
+                TreatmentPlanToolItem(
+                    title=str(row["title"]),
+                    tooth_fdi=row["tooth_fdi"],
+                    status=str(row["status"]),
+                    doctor_name=row["doctor_name"],
+                )
+                for row in view["plan_items"]
+                if row["status"] in ("draft", "planned", "in_progress")
+            ][:10],
+            prescriptions_total=len(view["prescriptions"]),
+            latest_prescription=latest_prescription,
+        )
+
+    return await _execute_tool("get_patient_clinical_summary", operation)
+
+
 async def get_doctor_schedules(
     db: AsyncSession,
     doctor_id: int | None = None,
@@ -1250,6 +1347,66 @@ async def submit_feedback(
 
     return await _execute_tool(
         "submit_feedback",
+        operation,
+        internal=internal,
+    )
+
+
+async def create_treatment_plan_draft(
+    db: AsyncSession,
+    patient_id: int,
+    title: str,
+    tooth_fdi: int | None = None,
+    notes: str | None = None,
+    *,
+    actor: User | None = None,
+) -> AgentToolResult[CreateTreatmentPlanDraftToolData]:
+    """Propose a treatment-plan draft for one patient; doctor accounts only.
+
+    The row is created in ``draft`` status through the clinical service: it
+    is a proposal on the record, never a live plan item, and nothing here can
+    move it to another status. Like every write tool it only executes after
+    the graph's one-time confirmation; the handler re-checks authorization
+    itself, and the treating doctor is resolved server-side from the acting
+    account's linked doctor record.
+    """
+
+    internal: dict[str, Any] = {}
+
+    async def operation() -> CreateTreatmentPlanDraftToolData:
+        request = CreateTreatmentPlanDraftInput(
+            patient_id=patient_id,
+            title=title,
+            tooth_fdi=tooth_fdi,
+            notes=notes,
+        )
+        await authorize_tool_call(
+            db,
+            actor,
+            "create_treatment_plan_draft",
+            request.model_dump(),
+        )
+        patient = await patient_service.get_patient(db, request.patient_id)
+        item = await clinical_service.create_plan_item_draft(
+            db,
+            patient=patient,
+            actor=actor,
+            title=request.title,
+            tooth_fdi=request.tooth_fdi,
+            notes=request.notes,
+        )
+        internal["patient_id"] = patient.id
+        internal["plan_item_id"] = item.id
+        return CreateTreatmentPlanDraftToolData(
+            patient_id=int(patient.id),
+            patient_name=patient.full_name,
+            title=item.title,
+            tooth_fdi=item.tooth_fdi,
+            status=item.status,
+        )
+
+    return await _execute_tool(
+        "create_treatment_plan_draft",
         operation,
         internal=internal,
     )

@@ -167,30 +167,38 @@ class AgentLLMTests(unittest.TestCase):
             schema["function"]["name"]
             for schema in get_llm_tool_schemas(role="admin")
         ]
-        self.assertEqual(len(admin_names), 20)
+        self.assertEqual(len(admin_names), 21)
         self.assertIn("get_clinic_overview_stats", admin_names)
         self.assertIn("get_user_reports_summary", admin_names)
         self.assertIn("get_staff_directory", admin_names)
         self.assertIn("get_audit_trail", admin_names)
         self.assertIn("create_patient", admin_names)
         self.assertIn("update_patient", admin_names)
+        # The clinical summary is a staff read for every staff role, while
+        # the treatment-plan draft tool is doctor-only and stays hidden here.
+        self.assertIn("get_patient_clinical_summary", admin_names)
+        self.assertNotIn("create_treatment_plan_draft", admin_names)
         # Receptionist sessions see staff tools (record management included)
         # but not admin-only ones; doctor sessions lack record management.
         receptionist_names = [
             schema["function"]["name"]
             for schema in get_llm_tool_schemas(role="receptionist")
         ]
-        self.assertEqual(len(receptionist_names), 16)
+        self.assertEqual(len(receptionist_names), 17)
         self.assertIn("create_patient", receptionist_names)
         self.assertIn("update_patient", receptionist_names)
+        self.assertIn("get_patient_clinical_summary", receptionist_names)
+        self.assertNotIn("create_treatment_plan_draft", receptionist_names)
         self.assertNotIn("get_clinic_overview_stats", receptionist_names)
         doctor_names = [
             schema["function"]["name"]
             for schema in get_llm_tool_schemas(role="doctor")
         ]
-        self.assertEqual(len(doctor_names), 14)
+        self.assertEqual(len(doctor_names), 16)
         self.assertNotIn("create_patient", doctor_names)
         self.assertNotIn("update_patient", doctor_names)
+        self.assertIn("get_patient_clinical_summary", doctor_names)
+        self.assertIn("create_treatment_plan_draft", doctor_names)
         # Staff-only tools are withheld from patient-bound sessions entirely;
         # the patient-facing weekly schedule tool stays available and the
         # patient-only profile tool appears.
@@ -206,6 +214,8 @@ class AgentLLMTests(unittest.TestCase):
         self.assertNotIn("get_clinic_overview_stats", patient_names)
         self.assertNotIn("search_patients", patient_names)
         self.assertNotIn("get_patient_summary", patient_names)
+        self.assertNotIn("get_patient_clinical_summary", patient_names)
+        self.assertNotIn("create_treatment_plan_draft", patient_names)
         self.assertNotIn("get_doctor_day_plan", patient_names)
         self.assertNotIn("create_patient", patient_names)
 

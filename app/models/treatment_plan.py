@@ -15,7 +15,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
+# ``draft`` rows are proposals written by the chat agent for a doctor: they
+# sit on the record for review but are not part of the live treatment
+# roadmap until clinic staff move them to ``planned`` through the panel.
 TREATMENT_PLAN_STATUSES: tuple[str, ...] = (
+    "draft",
     "planned",
     "in_progress",
     "completed",

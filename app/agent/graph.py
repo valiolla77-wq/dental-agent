@@ -10,18 +10,37 @@ from langgraph.runtime import Runtime
 from pydantic import ValidationError
 
 from app.agent.appointment_selection import (
+    PAST_DESTINATION_MESSAGE,
+    PAST_TARGET_MESSAGE,
+    booking_criteria_mismatch,
+    normalize_text,
+    parse_reschedule_destination,
     resolve_appointment_target,
 )
-from app.agent.confirmation_text import _describe_action, _target_selection_text
+from app.agent.confirmation_text import (
+    _describe_action,
+    _destination_text,
+    _target_selection_text,
+)
 from app.agent.confirmations import confirmation_store
 from app.agent.context import AGENT_RECURSION_LIMIT, MAX_AGENT_STEPS, AgentContext
 from app.agent.llm import create_chat_model
 from app.agent.messages import (
+    _all_user_texts,
     _append_message,
+    _latest_assistant_text,
     _latest_user_text,
     _message_content_to_text,
     _messages_for_model,
     safe_tool_call_for_history,
+)
+from app.agent.nudges import (
+    _CANCEL_RESCHEDULE_MARKERS,
+    _turn_had_tool_error,
+    _turn_tool_names,
+    degenerate_list_clarification,
+    empty_retry_clarification,
+    stall_directive,
 )
 from app.agent.outcomes import (
     _catalog_error,
@@ -49,6 +68,7 @@ from app.auth.permissions import (
 from app.errors import AppError
 from app.models.user import User
 from app.services.audit_service import record_audit
+from app.services.appointment_service import clinic_now, validate_appointment_slot
 
 logger = logging.getLogger("dental_agent.agent")
 
@@ -330,8 +350,17 @@ async def _interpret_model_response(
     response: Any,
     state: AgentState,
     runtime: Runtime[AgentContext],
-) -> dict[str, Any]:
-    """Phase 4b: queue the model's tool calls, or finish with its text reply."""
+) -> tuple[dict[str, Any], bool]:
+    """Phase 4b: queue the model's tool calls, or finish with its text reply.
+
+    Also returns whether the finish was *empty*: no usable tool call and
+    no text, the shape that lands on the «متوجه درخواست نشدم» fallback.
+    Calls the provider could not parse (``invalid_tool_calls`` — through
+    the OpenAI-compatible proxy, argument JSON sometimes arrives as a
+    string) and calls failing the shape filter are logged with their
+    name and reason before being dropped; in the eval they vanished
+    silently and the turn looked like a deliberate blank reply.
+    """
     calls: list[PendingToolCall] = []
     history_calls: list[dict[str, Any]] = []
     for call in getattr(response, "tool_calls", []) or []:
@@ -339,11 +368,31 @@ async def _interpret_model_response(
         arguments = call.get("args")
         call_id = call.get("id") or str(uuid4())
         if not isinstance(name, str) or not isinstance(arguments, dict):
+            logger.warning(
+                "Dropping unusable model tool call (name type %s, "
+                "args type %s); call content omitted",
+                type(name).__name__,
+                type(arguments).__name__,
+            )
             continue
         calls.append(
             {"tool_name": name, "arguments": arguments, "tool_call_id": call_id}
         )
         history_calls.append(safe_tool_call_for_history(name, arguments, call_id))
+    for call in getattr(response, "invalid_tool_calls", []) or []:
+        if isinstance(call, dict):
+            logger.warning(
+                "Dropping invalid model tool call %s (error: %s); "
+                "call content omitted",
+                call.get("name"),
+                call.get("error"),
+            )
+        else:
+            logger.warning(
+                "Dropping invalid model tool call of type %s; "
+                "call content omitted",
+                type(call).__name__,
+            )
 
     if calls:
         return {
@@ -359,10 +408,14 @@ async def _interpret_model_response(
             "confirmation_status": "not_required",
             "final_response": None,
             "route": "continue",
-        }
+        }, False
 
     final_response = _message_content_to_text(getattr(response, "content", ""))
-    if not final_response:
+    # A whitespace-only reply (live B02: exactly "\\n") is an empty finish
+    # too: it is truthy as a string, so the plain ``not final_response``
+    # check let it through as a real reply and it never earned a retry.
+    empty_finish = not final_response.strip()
+    if empty_finish:
         final_response = "متوجه درخواست نشدم؛ لطفاً آن را واضح‌تر بیان کنید."
     final_response = await _sanitize_write_final_response(
         runtime.context["db"],
@@ -375,18 +428,23 @@ async def _interpret_model_response(
         "confirmation_required": False,
         "confirmation_status": "not_required",
         "route": "finish",
-    }
+    }, empty_finish
 
 
-async def _ask_model(
+async def _invoke_model_once(
     state: AgentState,
     runtime: Runtime[AgentContext],
     actor: User | None,
-) -> dict[str, Any]:
-    """Phase 4a: call the model with the tools this actor may see."""
-    model = runtime.context.get("llm") or create_chat_model()
-    patient_bound = _is_patient_actor(actor)
-    role = actor_role(actor)
+    model: Any,
+    *,
+    patient_bound: bool,
+    role: str | None,
+) -> tuple[dict[str, Any], bool]:
+    """One model call with this actor's tools, plus response interpretation.
+
+    The boolean is the empty-finish flag from response interpretation;
+    a provider failure is never an empty finish.
+    """
     try:
         response = await model.bind_tools(
             get_llm_tool_schemas(
@@ -408,8 +466,248 @@ async def _ask_model(
             )
         )
     except Exception as exc:
-        return await _model_failure_update(exc, state, runtime)
+        return await _model_failure_update(exc, state, runtime), False
     return await _interpret_model_response(response, state, runtime)
+
+
+# Markers that name a reschedule (as opposed to a cancel) inside a
+# cancel/reschedule request. The cancel markers are the complement of
+# this set within nudges._CANCEL_RESCHEDULE_MARKERS.
+_RESCHEDULE_MARKERS = ("جابه جا", "جابجا", "بنداز", "منتقل", "انتقال")
+
+
+async def _server_proposal_update(
+    state: AgentState,
+    runtime: Runtime[AgentContext],
+    actor: User | None,
+) -> dict[str, Any] | None:
+    """Build a confirmation proposal server-side for a stalled group-B turn.
+
+    Live diagnosis (eval4, both models): after ``get_patient_appointments``
+    the model returns an empty/whitespace reply on every re-ask — the
+    act-now directive, the act-now-question stage and the empty-finish
+    retry all fire and all come back empty — so the turn ends on a
+    server-built list clarification instead of a confirmation proposal.
+    Prompting the model again cannot fix a model that answers nothing.
+
+    This is the deterministic last resort, run only after that recovery
+    is exhausted (see ``_ask_model``). It proposes exactly what the
+    model was supposed to propose, using only database facts and the
+    user's own words, and it never executes anything: the returned
+    update routes to the confirmation gate, which re-resolves the
+    target, re-authorizes the call and issues the one-time HMAC
+    confirmation exactly as for a model-proposed write. Returns None
+    whenever no safe proposal exists, so the caller falls back to the
+    existing clarification path:
+
+    - ambiguous or unmatched target (live B02: two future ترمیم rows;
+      live B06 with two simultaneous rows): never guess one of them;
+    - unparseable reschedule destination, or a destination slot that is
+      taken, off-schedule or otherwise invalid: ask instead of showing
+      a confirmation the gate would refuse with a catalog error;
+    - a past target, or a reschedule destination in the past: an
+      explicit rejection (``_finish_clarification``), not a proposal.
+      The destination's past-ness is checked before target resolution
+      because it is decidable from the user's words alone — live B05
+      must still be rejected explicitly even after B01 cancelled the
+      shared source row.
+    """
+    user_text = _latest_user_text(state)
+    if not user_text or _turn_had_tool_error(state):
+        return None
+    normalized = " ".join(normalize_text(user_text).split())
+    if not any(marker in normalized for marker in _CANCEL_RESCHEDULE_MARKERS):
+        return None
+    tools = _turn_tool_names(state)
+    if "get_patient_appointments" not in tools:
+        return None
+    if tools & {"cancel_appointment", "reschedule_appointment"}:
+        return None
+    if state.get("pending_action") is not None:
+        return None
+
+    db = runtime.context["db"]
+    now = runtime.context.get("now")
+    is_reschedule = any(marker in normalized for marker in _RESCHEDULE_MARKERS)
+    tool_name = "reschedule_appointment" if is_reschedule else "cancel_appointment"
+
+    destination: tuple[str, str, Any] | None = None
+    if is_reschedule:
+        destination = parse_reschedule_destination(
+            _destination_text(tool_name, user_text), now
+        )
+        if destination is not None and destination[2] <= clinic_now(now):
+            return _finish_clarification(state, PAST_DESTINATION_MESSAGE)
+
+    patient_scope: list[int] | None = None
+    if _is_patient_actor(actor):
+        patient_scope = await linked_patient_ids(db, actor)
+        if not patient_scope:
+            return None
+    selection = await resolve_appointment_target(
+        db,
+        appointment_id=None,
+        user_text=_target_selection_text(tool_name, user_text),
+        patient_ids=patient_scope,
+        now=now,
+    )
+    if selection.clarification:
+        if selection.clarification == PAST_TARGET_MESSAGE:
+            return _finish_clarification(state, PAST_TARGET_MESSAGE)
+        return None
+    appointment = selection.appointment
+    if appointment is None:
+        return None
+    if appointment.appointment_time < clinic_now(now):
+        # A single past row with no explicit date reaches here; the
+        # resolver only rejects past targets that name an explicit date.
+        return _finish_clarification(state, PAST_TARGET_MESSAGE)
+
+    arguments: dict[str, Any] = {}
+    if is_reschedule:
+        if destination is None:
+            return None
+        # The slot must be real, future and free for this appointment's
+        # doctor/service before the user is asked to approve it.
+        try:
+            await validate_appointment_slot(
+                db,
+                appointment.doctor_id,
+                appointment.service_id,
+                destination[0],
+                destination[1],
+                exclude_appointment_id=appointment.id,
+                now=now,
+            )
+        except AppError:
+            return None
+        arguments = {
+            "appointment_date": destination[0],
+            "appointment_time": destination[1],
+        }
+    return {
+        "pending_action": {
+            "tool_name": tool_name,
+            "arguments": arguments,
+            "tool_call_id": f"server-{uuid4()}",
+        },
+        "confirmation_required": True,
+        "confirmation_status": "pending",
+        "final_response": None,
+        "route": "confirmation",
+    }
+
+
+async def _ask_model(
+    state: AgentState,
+    runtime: Runtime[AgentContext],
+    actor: User | None,
+) -> dict[str, Any]:
+    """Phase 4a: call the model with the tools this actor may see.
+
+    When the model ends the turn with plain text even though the request
+    still needs a tool chain (see ``app.agent.nudges``), the turn is
+    re-asked once per stall stage with a server directive appended; the
+    directive never executes anything itself and every write still passes
+    authorization and the confirmation gate.
+
+    Two live-eval shapes get extra handling. An *empty* finish (no text,
+    no usable call — an unparseable call through the provider proxy
+    looks exactly like this) spends a stage marker on an attempt the
+    model never really answered, so when a directive already fired this
+    turn it is re-asked once more with that same directive instead of
+    surfacing the fallback text. A whitespace-only finish counts as
+    empty for the same reason. And a finish that still repeats the
+    fetched appointment list after the act-now recovery is replaced by
+    a server-built clarification (see ``degenerate_list_clarification``)
+    rather than shown to the user verbatim. If the empty-finish retry
+    also comes back empty, the turn still does not end on the bare
+    fallback: ``empty_retry_clarification`` builds a server-side
+    clarification from the already-fetched data instead.
+    """
+    model = runtime.context.get("llm") or create_chat_model()
+    patient_bound = _is_patient_actor(actor)
+    role = actor_role(actor)
+    update, empty_finish = await _invoke_model_once(
+        state, runtime, actor, model, patient_bound=patient_bound, role=role
+    )
+    directive_fired = False
+    empty_retry_used = False
+    for _ in range(4):
+        if update.get("route") != "finish":
+            break
+        working_messages = update.get("messages") or state.get("messages", [])
+        working: AgentState = {**state, "messages": working_messages}
+        found = stall_directive(working, patient_bound=patient_bound)
+        if found is None:
+            if not (empty_finish and directive_fired and not empty_retry_used):
+                break
+            # stall_directive has just re-checked this turn, including
+            # the tool-error gate that keeps failed-call turns (patient
+            # selection, validation, authorization) out of recovery; a
+            # directive could only have fired earlier with that gate
+            # green, and tool results cannot change inside this loop.
+            # The empty attempt therefore gets one more ask with the
+            # directive already present in ``state``'s messages, without
+            # spending another stage on it.
+            empty_retry_used = True
+            update, empty_finish = await _invoke_model_once(
+                state,
+                runtime,
+                actor,
+                model,
+                patient_bound=patient_bound,
+                role=role,
+            )
+            continue
+        _stage, directive = found
+        directive_fired = True
+        retry_state: AgentState = {
+            **working,
+            "messages": [
+                *working_messages,
+                {"role": "system", "content": directive},
+            ],
+        }
+        update, empty_finish = await _invoke_model_once(
+            retry_state,
+            runtime,
+            actor,
+            model,
+            patient_bound=patient_bound,
+            role=role,
+        )
+        state = retry_state
+    if update.get("route") == "finish":
+        # Last resort for a stalled cancel/reschedule turn: the model was
+        # re-asked through every stall stage and still proposed nothing.
+        # The server builds the confirmation proposal itself from the
+        # fetched rows (or rejects a past target/destination explicitly);
+        # when no safe proposal exists this returns None and the
+        # clarification path below runs unchanged.
+        proposal = await _server_proposal_update(state, runtime, actor)
+        if proposal is not None:
+            return proposal
+        if empty_finish and empty_retry_used:
+            # The extra re-ask for an empty finish also came back empty:
+            # the model never really answered this turn. End on a
+            # server-built clarification from the fetched data instead
+            # of the bare fallback (round-3 B02/B04/B05/B06 shape).
+            # ``state`` is the input of the last model call, so its
+            # history carries the fetched rows and the directives but
+            # not the empty reply being replaced.
+            clarification = empty_retry_clarification(state)
+            if clarification is not None:
+                return _finish_clarification(state, clarification)
+        clarification = degenerate_list_clarification(
+            state, update.get("final_response") or ""
+        )
+        if clarification is not None:
+            # ``state`` is the input of the last model call, so its
+            # history carries the fetched rows and the directives but
+            # not the degenerate reply being replaced.
+            return _finish_clarification(state, clarification)
+    return update
 
 
 async def _agent_decision_impl(
@@ -476,6 +774,24 @@ async def _confirmation_node(
     db = runtime.context["db"]
     try:
         arguments = dict(action.get("arguments") or {})
+
+        if name == "book_appointment" and not str(
+            action.get("tool_call_id") or ""
+        ).startswith("host-"):
+            # A model-proposed booking must not contradict the service,
+            # doctor, date or time the user explicitly named; the eval
+            # showed the model confirming 09:00 after telling the user
+            # 10:00 was free. Server-resolved option picks (host-*) are
+            # already bound to the displayed option set and skip this.
+            mismatch = await booking_criteria_mismatch(
+                db,
+                arguments=arguments,
+                user_texts=_all_user_texts(state),
+                now=runtime.context.get("now"),
+                last_assistant_text=_latest_assistant_text(state),
+            )
+            if mismatch is not None:
+                return _finish_clarification(state, mismatch)
 
         if name in {"cancel_appointment", "reschedule_appointment"}:
             # Patient callers never get to name an internal row id. The target

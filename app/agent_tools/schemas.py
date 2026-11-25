@@ -450,6 +450,115 @@ class PatientSummaryToolData(BaseModel):
     recent_appointments: list[PatientSummaryAppointmentItem]
 
 
+class GetPatientClinicalSummaryInput(BaseModel):
+    """Clinical record summary of one patient; staff/doctor sessions only."""
+
+    patient_id: int = Field(
+        gt=0,
+        description=(
+            "شناسه بیمار از نتیجه search_patients یا get_doctor_day_plan."
+        ),
+    )
+
+
+class ClinicalEntryToolItem(BaseModel):
+    """One recent clinical entry; free-text bodies stay out of the summary."""
+
+    kind: str
+    title: str
+    tooth_fdi: int | None
+    created_at: str
+
+
+class ToothStatusToolItem(BaseModel):
+    """One flagged tooth from the chart (healthy teeth are omitted)."""
+
+    tooth_fdi: int
+    status: str
+    note: str | None
+
+
+class TreatmentPlanToolItem(BaseModel):
+    """One open treatment-plan row (draft, planned or in progress)."""
+
+    title: str
+    tooth_fdi: int | None
+    status: str
+    doctor_name: str | None
+
+
+class PrescriptionToolItem(BaseModel):
+    """Compact view of the latest active prescription: drug names only."""
+
+    medication_names: list[str]
+    created_at: str
+
+
+class PatientClinicalSummaryToolData(BaseModel):
+    """Bounded clinical snapshot assembled from the clinical record models.
+
+    Deliberately compact: allergy titles in full, a few recent entries, only
+    non-healthy teeth, open plan items and the latest prescription's drug
+    names. The national id never appears in this payload.
+    """
+
+    patient_id: int
+    full_name: str
+    record_status: str
+    allergies: list[str]
+    recent_entries: list[ClinicalEntryToolItem]
+    flagged_teeth: list[ToothStatusToolItem]
+    open_plan_items: list[TreatmentPlanToolItem]
+    prescriptions_total: int
+    latest_prescription: PrescriptionToolItem | None
+
+
+class CreateTreatmentPlanDraftInput(BaseModel):
+    """Doctor-only proposal of a treatment-plan draft; staff sessions only."""
+
+    patient_id: int = Field(
+        gt=0,
+        description=(
+            "شناسه بیمار از نتیجه search_patients یا get_doctor_day_plan."
+        ),
+    )
+    title: str = Field(
+        min_length=2,
+        max_length=200,
+        description="عنوان اقدام درمانی پیشنهادی، مثل «ترمیم دندان ۲۶».",
+    )
+    tooth_fdi: int | None = Field(
+        default=None,
+        description=(
+            "اختیاری؛ شماره دندان به روش FDI (دو رقمی، ۱۱ تا ۴۸) اگر طرح "
+            "مربوط به یک دندان مشخص است."
+        ),
+    )
+    notes: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="اختیاری؛ توضیح کوتاه پزشک درباره این پیش‌نویس.",
+    )
+
+    @field_validator("title")
+    @classmethod
+    def reject_blank_title(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value cannot be blank")
+        return normalized
+
+
+class CreateTreatmentPlanDraftToolData(BaseModel):
+    """Facts of the stored draft; the row id stays server-side."""
+
+    patient_id: int
+    patient_name: str
+    title: str
+    tooth_fdi: int | None
+    status: str
+
+
 class DoctorScheduleItem(BaseModel):
     """One weekly working block of one doctor."""
 

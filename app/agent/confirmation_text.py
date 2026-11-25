@@ -42,6 +42,7 @@ def _confirmation_prompt(action: PendingAction) -> str:
         "create_patient": "ثبت پروندهٔ جدید",
         "update_patient": "ویرایش پرونده",
         "submit_feedback": "ثبت بازخورد",
+        "create_treatment_plan_draft": "ثبت پیش‌نویس طرح درمان",
     }
     summary = labels.get(name, "اجرای عملیات")
     if name == "book_appointment":
@@ -225,6 +226,30 @@ async def _describe_action(
             f"{' و '.join(changes)} را تأیید می‌کنید؟"
         )
 
+    if name == "create_treatment_plan_draft":
+        patient_id = args.get("patient_id")
+        patient = (
+            await db.get(Patient, patient_id)
+            if isinstance(patient_id, int)
+            else None
+        )
+        if patient is None:
+            raise AppError("PATIENT_NOT_FOUND")
+        title = str(args.get("title") or "").strip()
+        if not title:
+            raise AppError("COMMON_VALIDATION_ERROR")
+        summary = (
+            f"ثبت پیش‌نویس طرح درمان «{title}» برای {patient.full_name}"
+        )
+        tooth_fdi = args.get("tooth_fdi")
+        if isinstance(tooth_fdi, int):
+            summary += f" (دندان {to_persian_digits(str(tooth_fdi))})"
+        summary += (
+            "؛ این پیش‌نویس تا بررسی در پنل، جزو برنامهٔ درمانی فعال "
+            "بیمار نیست"
+        )
+        return f"{summary} را تأیید می‌کنید؟"
+
     if name == "submit_feedback":
         category = str(args.get("category", ""))
         label = _FEEDBACK_LABELS.get(category, "بازخورد")
@@ -244,8 +269,44 @@ def _target_selection_text(tool_name: str, text: str) -> str:
     ``نوبت ۱۰ را به ۱۱ منتقل کن`` names the current slot before ``به`` and the
     new slot after it. Only the former may identify the target; otherwise the
     destination date/time would filter out the row the user wants to move.
+
+    The eval's B02 phrasing names the destination after the verb instead —
+    ``نوبت ترمیمم رو بنداز شنبهٔ آینده ساعت ۱۱`` has no ``به`` at all, so the
+    destination time (۱۱) was matched against the current row (۱۰) and the
+    target resolved to nothing. When no ``به`` clause exists, everything
+    from the reschedule verb onward is the destination and is dropped the
+    same way; a verb at the very start leaves the text untouched.
     """
     if tool_name != "reschedule_appointment":
         return text
     before_destination = re.split(r"\s+به\s+", text, maxsplit=1)[0]
-    return before_destination if before_destination.strip() else text
+    if before_destination.strip() and before_destination != text:
+        return before_destination
+    for marker in ("بنداز", "منتقل کن", "جابه‌جا کن", "جابه جا کن"):
+        head, sep, _tail = text.partition(marker)
+        if sep and head.strip():
+            return head
+    return text
+
+
+def _destination_text(tool_name: str, text: str) -> str:
+    """Keep only the reschedule destination clause of a request.
+
+    Mirror image of ``_target_selection_text``: for
+    ``نوبت فردام رو بنداز دیروز ساعت ۹`` the destination is «دیروز ساعت
+    ۹» (after the verb); for ``نوبت ۱۰ را به ۱۱ منتقل کن`` it is what
+    follows «به». The source criteria must never leak into destination
+    parsing — «فردا» in B05 names the appointment to move, not the day
+    to move it to — so the «به» clause is tried first: a verb-first
+    split of «نوبتم رو به شنبه ساعت ۱۱ منتقل کن» would leave only « کن».
+    """
+    if tool_name != "reschedule_appointment":
+        return text
+    _head, sep, tail = text.partition(" به ")
+    if sep and tail.strip():
+        return tail
+    for marker in ("بنداز", "منتقل کن", "جابه‌جا کن", "جابه جا کن"):
+        _head, sep, tail = text.partition(marker)
+        if sep and tail.strip():
+            return tail
+    return text
